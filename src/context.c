@@ -3,59 +3,170 @@
 #include "util.c"
 #include "vector.h"
 
-typedef uint_least32_t instruction;
 typedef uint_least8_t byte;
 typedef uint64_t u64;
+typedef uint32_t u32;
 typedef uint16_t u16;
 typedef uint8_t u8;
 
 typedef enum {
-  Halt = 0b0000000000,
-  NoOp = 0b0010000000,
-  Inc  = 0b0000010000,
-  Dec  = 0b0010010000,
-  Add  = 0b0000010001,
-  Sub  = 0b0010010001,
-  Jmp  = 0b0000010010,
-  JIfE = 0b0010010010,
-  JIfG = 0b0100010010,
-  JIfL = 0b0110010010,
-  JIGE = 0b1000010010,
-  JILE = 0b1010010010,
-  JINE = 0b1100010010,
-  Cmp  = 0b1110010010,
-  Mov  = 0b0000010011,
-  StrN = 0b0000010100,
-  StrO = 0b0010010100,
-  StrD = 0b0100010100,
-  StrT = 0b0110010100,
-  StrQ = 0b1000010100,
-  StrF = 0b1010010100,
-} OpCode;
-
-typedef struct {
-  OpCode operation;
-  byte destination, source;
-  u16 immediate;
-} DecodedInstruction;
-
-typedef struct {
-  byte *base, *entry, *code, *data, *vars;
-  u64 code_size, data_size, vars_size;
-} Prelude;
+  // None/R -- B
+  Halt = 0b1000000000000000,
+  NoOp = 0b1000000000000001,
+  Inc = 0b1000000000000010,
+  Dec = 0b1000000000000011,
+  // R, r -- D
+  Add = 0b0000000000000000,
+  Sub = 0b0000000000000001,
+  Dupe = 0b0000000000000010,
+  // R, r, s, i -- Qf
+  Jump = 0b0100000000000000,
+  JIfE = 0b0100000000000001,
+  JIfG = 0b0100000000000010,
+  JIfL = 0b0100000000000011,
+  JIGE = 0b0100000000000100,
+  JILE = 0b0100000000000101,
+  JINE = 0b0100000000000110,
+  // R, i -- Qi
+  MvSg = 0b0010000000000000,
+  MvDb = 0b0010000000000001,
+  MvQd = 0b0010000000000010,
+  MvFl = 0b0010000000000011,
+  // R, r, i -- Qo
+  LdSg = 0b0010000001000000,
+  LdDb = 0b0010000001000001,
+  LdQd = 0b0010000001000010,
+  LdFl = 0b0010000001000011,
+  StSg = 0b0010000001000100,
+  StDb = 0b0010000001000101,
+  StQd = 0b0010000001000110,
+  StFl = 0b0010000001000111,
+} FuncCode;
 
 typedef struct {
   u64 registers[32];
   Prelude prelude;
   Vector bytecode;
   byte *ip;
-  u8 cmp_flags;
 } Context;
 
 Context context_new(Vector bytecode, Prelude prelude) {
-  Context out = {{0}, prelude, bytecode, prelude.code, 0};
-  return out;
+  return (Context){.registers = {0},
+                   .prelude = prelude,
+                   .bytecode = bytecode,
+                   .ip = prelude.entry};
 }
+
+typedef struct {
+  u64 *destination, *source, *alt_source;
+  FuncCode functional;
+  u16 immediate;
+} Instruction;
+
+Instruction decode_instruction(Context *context) {
+  u8 mark = ((*(u8 *)context->ip) >> 5);
+  if (mark & 0b100) {
+    return decode_instruction_type_b(context);
+  } else if (mark == 0b000) {
+    return decode_instruction_type_d(context);
+  } else if (mark == 0b010) {
+    return decode_instruction_type_qf(context);
+  } else if ((*(u16 *)context->ip) & 0b10000000) {
+    return decode_instruction_type_qo(context);
+  }
+  return decode_instruction_type_qi(context);
+}
+
+static inline u8 get_dest(byte *ip) { return (*(u8 *)ip) & 0b11111; }
+static inline u8 get_src(byte *ip) { return (*(u8 *)ip + 1) >> 3; }
+static inline u16 get_immediate(byte *ip, u8 bitcount) {
+  return from_be_bytes_16(ip + 2) & ((1 << bitcount) - 1);
+}
+
+Instruction decode_instruction_type_b(Context *context) {
+  const u16 mask = 0b1000000000000000;
+  u8 raw = *(u8 *)context->ip;
+  u16 func = raw >> 5;
+  func &= 0b11;
+  func |= mask;
+  u8 dest = get_dest(context->ip);
+  return (Instruction){.functional = func,
+                       .destination = &context->registers[dest],
+                       .alt_source = {0},
+                       .immediate = {0},
+                       .source = {0}};
+}
+Instruction decode_instruction_type_d(Context *context) {
+  const u16 mask = 0b0000000000000000;
+  u16 raw = from_be_bytes_16(context->ip);
+  u16 func = raw;
+  func &= 0b111;
+  func |= mask;
+  u8 dest = get_dest(context->ip);
+  u8 src = get_src(context->ip);
+  return (Instruction){
+      .functional = func,
+      .destination = &context->registers[dest],
+      .source = &context->registers[src],
+      .alt_source = {0},
+      .immediate = {0},
+  };
+}
+Instruction decode_instruction_type_qi(Context *context) {
+  const u16 mask = 0b0010000000000000;
+  u32 raw = from_be_bytes_32(context->ip);
+  u16 func = raw >> 16;
+  func &= 0xff;
+  func |= mask;
+  u8 dest = get_dest(context->ip);
+  u16 immd = get_immediate(context->ip, 16);
+  return (Instruction){
+      .functional = func,
+      .destination = &context->registers[dest],
+      .immediate = immd,
+      .source = {0},
+      .alt_source = {0},
+  };
+}
+Instruction decode_instruction_type_qo(Context *context) {
+  const u16 mask = 0b0010000001000000;
+  u32 raw = from_be_bytes_32(context->ip);
+  u16 func = raw >> 12;
+  func &= 0b01111111;
+  func |= mask;
+  u8 dest = get_dest(context->ip);
+  u8 src = get_src(context->ip);
+  u16 immd = get_immediate(context->ip, 12);
+  return (Instruction){
+      .functional = func,
+      .destination = &context->registers[dest],
+      .source = &context->registers[src],
+      .immediate = immd,
+      .alt_source = {0},
+  };
+}
+Instruction decode_instruction_type_qf(Context *context) {
+  const u16 mask = 0b0100000000000000;
+  u32 raw = from_be_bytes_32(context->ip);
+  u16 func = raw >> 13;
+  func &= 0b00111111;
+  func |= mask;
+  u8 dest = get_dest(context->ip);
+  u8 src = get_src(context->ip);
+  u16 immd = get_immediate(context->ip, 8);
+  u8 alt_src = raw >> 8;
+  alt_src &= 0b11111;
+  return (Instruction){.functional = func,
+                       .destination = &context->registers[dest],
+                       .source = &context->registers[src],
+                       .immediate = immd,
+                       .alt_source = &context->registers[alt_src]};
+}
+
+typedef struct {
+  byte *base, *entry, *code, *data, *vars;
+  u64 code_size, data_size, vars_size;
+} Prelude;
 
 Prelude read_prelude(byte *bytecode) {
   eprintf("[LOG] Reading prelude!\n");
@@ -95,27 +206,4 @@ Prelude read_prelude(byte *bytecode) {
     eprintf("[LOG] Read size as:     %016lX\n", *tmp_sz);
   }
   return out;
-}
-
-DecodedInstruction decode_instruction(Context *context) {
-  eprintf("[LOG] Decoding instruction!\n");
-  instruction inst = *((instruction *)context->ip);
-  eprintf("[LOG] Instruction read as: %08X\n", inst);
-  DecodedInstruction out = {0};
-  out.destination = inst >> 27;
-  eprintf("[LOG] Destination read as: %i\n", out.destination);
-  out.source = (inst >> 22) & 0b11111;
-  eprintf("[LOG] Source read as:      %i\n", out.source);
-  out.immediate = (inst >> 10) & 0b111111111111;
-  eprintf("[LOG] Immediate read as:   %i\n", out.immediate);
-  out.functional = (inst >> 7) & 0b111;
-  eprintf("[LOG] Functional read as:  %i\n", out.functional);
-  out.opcode = inst & 0b1111111;
-  eprintf("[LOG] Opcode read as:      %i\n", out.opcode);
-  return out;
-}
-
-void exec_instruction(Context *context) {
-  eprintf("[LOG] Executing instruction!\n");
-  DecodedInstruction inst = decode_instruction(context);
 }

@@ -17,9 +17,7 @@ static int is_big_endian = 2;
 
 void set_endianess() {
   eprintf("[LOG] Setting endianess!\n");
-  byte bytes[4] = {0x80, 0, 0, 0};
-  uint32_t *num = (uint32_t *)&bytes;
-  if (*num == 0x7fffffff) {
+  if (*(uint32_t *)&(byte[]){0x80, 0, 0, 0} == 0x7fffffff) {
     is_big_endian = 1;
     eprintf("[LOG] System is big endian!\n");
   } else {
@@ -29,9 +27,8 @@ void set_endianess() {
 }
 void invert_bytes(void *thang, int byte_count) {
   byte *thing = thang;
-  byte tmp = 0;
   for (int i = 0; i < (byte_count / 2); i++) {
-    tmp = thing[i];
+    byte tmp = thing[i];
     thing[i] = thing[byte_count - 1 - i];
     thing[byte_count - 1 - i] = tmp;
   }
@@ -40,6 +37,20 @@ u64 from_be_bytes(byte *bytes) {
   u64 out = *(u64 *)bytes;
   if (!is_big_endian) {
     invert_bytes(&out, 8);
+  }
+  return out;
+}
+u32 from_be_bytes_32(byte *bytes) {
+  u32 out = *(u32 *)bytes;
+  if (!is_big_endian) {
+    invert_bytes(&out, 4);
+  }
+  return out;
+}
+u16 from_be_bytes_16(byte *bytes) {
+  u32 out = *(u16 *)bytes;
+  if (!is_big_endian) {
+    invert_bytes(&out, 2);
   }
   return out;
 }
