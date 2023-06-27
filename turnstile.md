@@ -1,57 +1,78 @@
 This is a doc specifying turnstile's behaviour.
 # Stuff idk
-Turnstile has 31 general use registers, all of which are 64-bits wide.
-Other registers include a Comparison flag register, 
-which is subdivided into flags like `CE` comparison equal 
-or `CG` comparison greater than.
+Turnstile has 30 general use registers, all of which are 64-bits wide.
 There is also `ip` which keeps track of the current executor position and is
 modified by jump instructions.
-Additionally `sp` should be used to keep track of the stack.
+Additionally `sp` should be used to keep track of the stack
+and `rZ` is always zero.
 | Register | Register Code | 0bRegCode | Description      |
 | -------- | ------------- | --------- | ---------------- |
-| r00-31   |          0-31 |  0b000000 | General Purpose  |
-| sp       |            32 |  0b111111 | Stack management |
+| rZ       |             0 |   0b00000 | Always zero      |
+| r01-31   |          1-30 |   0b00001 | General Purpose  |
+| sp       |            31 |   0b11111 | Stack management |
 | ip       |          None |      None | Branching        |
-| CmpReg   |          None |      None | Branching        |
 # Bytecode
 First and foremost the encoding: turnstile is big-endian encoded.
-The following is the encoding of an instruction:
-R: register 1, destination, 5 bits
-r: register 2, source, 5 bits
-i: immediate, offset or normal value, 12 bits
-f: functional, select instruction from group, 3 bits
-o: opcode, 7 bits
-|RRRR_Rrrr|rrii_iiii|iiii_iiff|fooo_oooo|
-Or in words: each instruction is 32 bits long,
-the most significant 5 bits denote the destination register,
-the 5 bits following denote sourcre register, they may be ignored,
-the 12 bits following that are an immediate value,
-the next 3 bits select an instruction in a group,
-the 7 least significant bits are the opcode.
-## Opcodes
-| Name | Functional | Opcode | 0xOpcode | 0bfffOOOOOOO | Description           |
-| ---- | ---------- | ------ | -------- | ------------ | --------------------- |
-| Halt |          0 |      0 |     0x00 | 0b0000000000 | Halts execution       |
-| NoOp |          1 |      0 |          | 0b0010000000 | Does nothing          |
-| Inc  |          0 |     16 |     0xa0 | 0b0000010000 | R += 1                |
-| Dec  |          1 |        |          | 0b0010010000 | R -= 1                |
-| Add  |          0 |     17 |     0xa1 | 0b0000010001 | R += r + i            |
-| Sub  |          1 |     17 |          | 0b0010010001 | R += -r - i           |
-| Jmp  |          0 |     18 |     0xa3 | 0b0000010010 | ip = r + i            |
-| JIfE |          1 |        |          | 0b0010010010 | ip = CE ? r + i : ip  |
-| JIfG |          2 |        |          | 0b0100010010 | ip = CG ? r + i : ip  |
-| JIfL |          3 |        |          | 0b0110010010 | ip = CL ? r + i : ip  |
-| JIGE |          4 |        |          | 0b1000010010 | ip = !CL ? r + i : ip |
-| JILE |          5 |        |          | 0b1010010010 | ip = !CG ? r + i : ip |
-| JINE |          6 |        |          | 0b1100010010 | ip = !CE ? r + i : ip |
-| Cmp  |          7 |        |          | 0b1110010010 | Sets CE, CG and CL    |
-| Mov  |            |     19 |     0xa4 | 0b0000010011 | R = r                 |
-| StrN |          0 |     20 |     0xa5 | 0b0000010100 | R = i                 |
-| StrO |          1 |        |          | 0b0010010100 | R = i << 12           |
-| StrD |          2 |        |          | 0b0100010100 | R = i << 24           |
-| StrT |          3 |        |          | 0b0110010100 | R = i << 36           |
-| StrQ |          4 |        |          | 0b1000010100 | R = i << 48           |
-| StrF |          5 |        |          | 0b1010010100 | R = (i & 0x0f) << 60  |
+Additionally the code segment of the bytecode has to be followed
+by a padding of 8 Halt instructions.
+## Instructions
+Formats:
+| Arguments   | size | 1st byte  | 2nd byte  | 3rd byte  | 4th byte  | Type |
+| ----------- | ---- | --------- | --------- | --------- | --------- | ---- |
+| None/R:     |    8 | 1ffR_RRRR |           |           |           | B    |
+| R, r:       |   16 | 000R_RRRR | rrrr_rfff |           |           | D    |
+| R, i:       |   32 | 001R_RRRR | f0ff_f0ff | iiii_iiii | iiii_iiii | Qi   |
+| R, r, i:    |   32 | 001R_RRRR | rrrr_r1ff | ffff_iiii | iiii_iiii | Qo   |
+| R, r, s, i: |   32 | 010R_RRRR | rrrr_rfff | fffs_ssss | iiii_iiii | Qf   |
+The above are the format patterns for different instruction types.
+In the pattern letters stand for a bit of the corresponding argument.
+The letter `f` signifies a bit of the functional code, this identifies
+the actual operation to be done. The functional code is split in some 
+cases, this is to keep the parity of the rest of the data.
+The prefix of `0b011x_xxxx` is reserved for longer instructions.
+
+| Name | Description            | f/max_f         |
+| ---- | ---------------------- | --------------- |
+| 5 bit register or no argument                   |
+| ---- | ---------------------- | --------------- |
+| Halt | Halts execution        | 0/3             |
+| NoOp | Does nothing           | 1/3             |
+| Inc  | R++                    | 2/3             |
+| Dec  | R--                    | 3/3             |
+| ---- | ---------------------- | --------------- |
+| 5 bit source and destination register args      |
+| ---- | ---------------------- | --------------- |
+| Add  | R += r                 | 0/7             |
+| Sub  | R -= r                 | 1/7             |
+| Dupe | R = r                  | 2/7             |
+| ---- | ---------------------- | --------------- |
+| 5 bit lhs, rhs and src register, 8 bit offset   |
+| ---- | ---------------------- | --------------- |
+| Jump | ip = s + i             | 0/63            |
+| JIfE | ip = R==r ? s + i : ip | 1/63            |
+| JIfG | ip = R> r ? s + i : ip | 2/63            |
+| JIfL | ip = R< r ? s + i : ip | 3/63            |
+| JIGE | ip = R>=r ? s + i : ip | 4/63            |
+| JILE | ip = R<=r ? s + i : ip | 5/63            |
+| JINE | ip = R!=r ? s + i : ip | 6/63            |
+| ---- | ---------------------- | --------------- |
+| 5 bit destination register, 16 bit immediate    |
+| ---- | ---------------------- | --------------- |
+| MvSg | R = i                  | 0/63            |
+| MvDb | R = i << 16            | 1/63            |
+| MvQd | R = i << 32            | 2/63            |
+| MvFl | R = i << 48            | 3/63            |
+| ---- | ---------------------- | --------------- |
+| 5 bit dest and src register, 12 bit offset      |
+| ---- | ---------------------- | --------------- |
+| LdSg | R = (u8) [r + i]       | 0/63            |
+| LdDb | R = (u16)[r + i]       | 1/63            |
+| LdQd | R = (u32)[r + i]       | 2/63            |
+| LdFl | R = (u64)[r + i]       | 3/63            |
+| StSg | [R + i] = (u8) r       | 4/63            |
+| StDb | [R + i] = (u16)r       | 5/63            |
+| StQd | [R + i] = (u32)r       | 6/63            |
+| StFl | [R + i] = (u64)r       | 7/63            |
 
 # Layout
 Turnstile's bytecode has to declare an entry point, 
