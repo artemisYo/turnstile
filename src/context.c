@@ -1,3 +1,5 @@
+#ifndef CONTEXT_DEFINED
+#define CONTEXT_DEFINED
 #include <stdint.h>
 
 #include "util.c"
@@ -44,6 +46,11 @@ typedef enum {
 } FuncCode;
 
 typedef struct {
+  byte *base, *entry, *code, *data, *vars;
+  u64 code_size, data_size, vars_size;
+} Prelude;
+
+typedef struct {
   u64 registers[32];
   Prelude prelude;
   Vector bytecode;
@@ -63,20 +70,6 @@ typedef struct {
   u16 immediate;
 } Instruction;
 
-Instruction decode_instruction(Context *context) {
-  u8 mark = ((*(u8 *)context->ip) >> 5);
-  if (mark & 0b100) {
-    return decode_instruction_type_b(context);
-  } else if (mark == 0b000) {
-    return decode_instruction_type_d(context);
-  } else if (mark == 0b010) {
-    return decode_instruction_type_qf(context);
-  } else if ((*(u16 *)context->ip) & 0b10000000) {
-    return decode_instruction_type_qo(context);
-  }
-  return decode_instruction_type_qi(context);
-}
-
 static inline u8 get_dest(byte *ip) { return (*(u8 *)ip) & 0b11111; }
 static inline u8 get_src(byte *ip) { return (*(u8 *)ip + 1) >> 3; }
 static inline u16 get_immediate(byte *ip, u8 bitcount) {
@@ -92,9 +85,9 @@ Instruction decode_instruction_type_b(Context *context) {
   u8 dest = get_dest(context->ip);
   return (Instruction){.functional = func,
                        .destination = &context->registers[dest],
-                       .alt_source = {0},
-                       .immediate = {0},
-                       .source = {0}};
+                       .alt_source = 0,
+                       .immediate = 0,
+                       .source = 0};
 }
 Instruction decode_instruction_type_d(Context *context) {
   const u16 mask = 0b0000000000000000;
@@ -108,8 +101,8 @@ Instruction decode_instruction_type_d(Context *context) {
       .functional = func,
       .destination = &context->registers[dest],
       .source = &context->registers[src],
-      .alt_source = {0},
-      .immediate = {0},
+      .alt_source = 0,
+      .immediate = 0,
   };
 }
 Instruction decode_instruction_type_qi(Context *context) {
@@ -124,8 +117,8 @@ Instruction decode_instruction_type_qi(Context *context) {
       .functional = func,
       .destination = &context->registers[dest],
       .immediate = immd,
-      .source = {0},
-      .alt_source = {0},
+      .source = 0,
+      .alt_source = 0,
   };
 }
 Instruction decode_instruction_type_qo(Context *context) {
@@ -142,7 +135,7 @@ Instruction decode_instruction_type_qo(Context *context) {
       .destination = &context->registers[dest],
       .source = &context->registers[src],
       .immediate = immd,
-      .alt_source = {0},
+      .alt_source = 0,
   };
 }
 Instruction decode_instruction_type_qf(Context *context) {
@@ -162,11 +155,70 @@ Instruction decode_instruction_type_qf(Context *context) {
                        .immediate = immd,
                        .alt_source = &context->registers[alt_src]};
 }
-
-typedef struct {
-  byte *base, *entry, *code, *data, *vars;
-  u64 code_size, data_size, vars_size;
-} Prelude;
+struct Cancer {Instruction inst; u8 sz;} decode_instruction(Context *context) {
+  u8 mark = ((*(u8 *)context->ip) >> 5);
+  if (mark & 0b100) {
+    return (struct Cancer){decode_instruction_type_b(context), 1};
+  } else if (mark == 0b000) {
+    return (struct Cancer){decode_instruction_type_d(context), 2};
+  } else if (mark == 0b010) {
+    return (struct Cancer){decode_instruction_type_qf(context), 4};
+  } else if ((*(u16 *)context->ip) & 0b10000000) {
+    return (struct Cancer){decode_instruction_type_qo(context), 4};
+  }
+  return (struct Cancer){decode_instruction_type_qi(context), 4};
+}
+int exec_instruction(Context *context) {
+  struct Cancer cancer = decode_instruction(context);
+  Instruction instruction = cancer.inst;
+  context->ip += cancer.sz;
+  switch (instruction.functional) {
+    case Halt: return 0;
+    case NoOp: break;
+    case Inc: *(instruction.destination)++, break;
+    case Dec: *(instruction.destination)--, break;
+    case Add: *instruction.destination += *instruction.source, break;
+    case Sub: *instruction.descination -= *instruction.source, break;
+    case Dupe: *instruction.destination = *instruction.source, break;
+    case Jump: 
+      context->ip = context->bytecode.buffer + *instruction.alt_source + instruction.immediate;
+      break;
+    case JIfE:
+      if (*instruction.destination == instruction.source)
+        context->ip = context->bytecode.buffer + *instruction.alt_source + instruction.immediate;
+      break;
+    case JIfG:
+      if (*instruction.destination > instruction.source)
+        context->ip = context->bytecode.buffer + *instruction.alt_source + instruction.immediate;
+      break;
+    case JIfL:
+      if (*instruction.destination < instruction.source)
+        context->ip = context->bytecode.buffer + *instruction.alt_source + instruction.immediate;
+      break;
+    case JIGE:
+      if (*instruction.destination >= instruction.source)
+        context->ip = context->bytecode.buffer + *instruction.alt_source + instruction.immediate;
+      break;
+    case JILE:
+      if (*instruction.destination <= instruction.source)
+        context->ip = context->bytecode.buffer + *instruction.alt_source + instruction.immediate;
+      break;
+    case JINE:
+      if (*instruction.destination != instruction.source)
+        context->ip = context->bytecode.buffer + *instruction.alt_source + instruction.immediate;
+      break;
+    case MvSg: 
+      *((u16*)instruction.destination + 3) = instruction.immediate, break;
+    case MvDb:
+      *((u16*)instruction.destination + 2) = instruction.immediate, break;
+    case MvQd:
+      *((u16*)instruction.destination + 1) = instruction.immediate, break;
+    case MvFl:
+      *((u16*)instruction.destination) = instruction.immediate, break;
+    default: printf("[Error] Load and Store instructions are todo!\n"), return 0;
+  }
+  return 1;
+}
 
 Prelude read_prelude(byte *bytecode) {
   eprintf("[LOG] Reading prelude!\n");
@@ -207,3 +259,4 @@ Prelude read_prelude(byte *bytecode) {
   }
   return out;
 }
+#endif

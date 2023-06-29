@@ -4,6 +4,8 @@
 
 #include "vector.h"
 
+#ifndef UTIL_DEFINED
+#define UTIL_DEFINED
 #define DEBUG 1
 #define eprintf(...) \
   if (DEBUG) fprintf(stderr, __VA_ARGS__);
@@ -12,6 +14,8 @@
 
 typedef uint_least8_t byte;
 typedef uint64_t u64;
+typedef uint32_t u32;
+typedef uint16_t u16;
 
 static int is_big_endian = 2;
 
@@ -78,3 +82,4 @@ Vector from_file(char *path) {
   }
   return bytecode;
 }
+#endif
