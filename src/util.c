@@ -1,11 +1,11 @@
+#ifndef UTIL_DEFINED
+#define UTIL_DEFINED
+
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-#include "vector.h"
-
-#ifndef UTIL_DEFINED
-#define UTIL_DEFINED
 #define DEBUG 1
 #define eprintf(...) \
   if (DEBUG) fprintf(stderr, __VA_ARGS__);
@@ -58,7 +58,7 @@ u16 from_be_bytes_16(byte *bytes) {
   }
   return out;
 }
-Vector from_file(char *path) {
+void file_into(int buffer_size, byte buffer[buffer_size], char *path) {
   eprintf("[LOG] Opening file: %s\n", path);
   FILE *bytecode_stream = fopen(path, "r");
   if (bytecode_stream == NULL) {
@@ -74,12 +74,14 @@ Vector from_file(char *path) {
   try(fseek(bytecode_stream, 0, SEEK_END));
   long bytecode_size = ftell(bytecode_stream);
   try(bytecode_size);
+  if (bytecode_size > buffer_size)
+    printf("[Error] Allocated RAM-size is smaller than the bytecode!\n"),
+        exit(0);
   eprintf("[LOG] File size: %li\n", bytecode_size);
   try(fseek(bytecode_stream, 0, SEEK_SET));
-  Vector bytecode = vector.make(bytecode_size);
-  for (int c = fgetc(bytecode_stream); c != EOF; c = fgetc(bytecode_stream)) {
-    vector.push(&bytecode, (byte)c);
+  for (int c = fgetc(bytecode_stream), i = 0; c != EOF && i < buffer_size;
+       c = fgetc(bytecode_stream), i++) {
+    buffer[i] = c;
   }
-  return bytecode;
 }
 #endif

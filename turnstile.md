@@ -24,6 +24,7 @@ Formats:
 | R, i:       |   32 | 001R_RRRR | f0ff_f0ff | iiii_iiii | iiii_iiii | Qi   |
 | R, r, i:    |   32 | 001R_RRRR | rrrr_r1ff | ffff_iiii | iiii_iiii | Qo   |
 | R, r, s, i: |   32 | 010R_RRRR | rrrr_rfff | fffs_ssss | iiii_iiii | Qf   |
+
 The above are the format patterns for different instruction types.
 In the pattern letters stand for a bit of the corresponding argument.
 The letter `f` signifies a bit of the functional code, this identifies
@@ -37,14 +38,14 @@ The prefix of `0b011x_xxxx` is reserved for longer instructions.
 | ---- | ---------------------- | --------------- |
 | Halt | Halts execution        | 0/3             |
 | NoOp | Does nothing           | 1/3             |
-| Inc  | R++                    | 2/3             |
-| Dec  | R--                    | 3/3             |
+| Not  | R = !R                 | 2/3             |
 | ---- | ---------------------- | --------------- |
 | 5 bit source and destination register args      |
 | ---- | ---------------------- | --------------- |
-| Add  | R += r                 | 0/7             |
-| Sub  | R -= r                 | 1/7             |
 | Dupe | R = r                  | 2/7             |
+| And  | R &= r                 | 3/7             |
+| Or   | R |= r                 | 4/7             |
+| Xor  | R ^= r                 | 5/7             |
 | ---- | ---------------------- | --------------- |
 | 5 bit lhs, rhs and src register, 8 bit offset   |
 | ---- | ---------------------- | --------------- |
@@ -73,6 +74,9 @@ The prefix of `0b011x_xxxx` is reserved for longer instructions.
 | StDb | [R + i] = (u16)r       | 5/63            |
 | StQd | [R + i] = (u32)r       | 6/63            |
 | StFl | [R + i] = (u64)r       | 7/63            |
+| Add  | R = R + r + i          | 8/63            |
+| Sub  | R = R - r - i          | 9/63            |
+
 
 # Layout
 Turnstile's bytecode has to declare an entry point, 

@@ -6,16 +6,19 @@
 #include "context.c"
 #include "util.c"
 
-int main(int argc, char *argv[]) {
+const int ram_size = 640000;
+
+int main(int argc, char* argv[]) {
   set_endianess();
   if (argc != 2) {
     printf("[Error] Please supply a file name!\n");
     return 0;
   }
-  Vector bytecode = from_file(argv[1]);
-  vector.dump(bytecode);
-  Prelude prelude = read_prelude(bytecode.buffer);
-  Context context = context_new(bytecode, prelude);
-  vector.free(context.bytecode);
+  Context* context = context_from_file(ram_size, argv[1]);
+  for (int i = 0; i < 30; i++) {
+    exec_instruction(context);
+    context_dump(context);
+  }
+
   return 0;
 }
