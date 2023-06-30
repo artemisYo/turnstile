@@ -15,9 +15,12 @@ int main(int argc, char* argv[]) {
     return 0;
   }
   Context* context = context_from_file(ram_size, argv[1]);
-  for (int i = 0; i < 30; i++) {
-    exec_instruction(context);
-    context_dump(context);
+  while (exec_instruction(context)) {
+    printf("------------\n");
+    printf("Register 1: %li\n", context->registers[1]);
+    printf("Register 2: %li\n", context->registers[2]);
+    printf("Register 5: %li\n", context->registers[5]);
+    printf("------------\n");
   }
 
   return 0;

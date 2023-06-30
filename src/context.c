@@ -10,6 +10,9 @@ typedef uint32_t u32;
 typedef uint16_t u16;
 typedef uint8_t u8;
 
+#define name_of(aaa) \
+  { #aaa, aaa }
+
 typedef enum {
   // None/R -- B
   Halt = 0b1000000000000000,
@@ -45,6 +48,27 @@ typedef enum {
   Add = 0b0010000001001000,
   Sub = 0b0010000001001001,
 } FuncCode;
+
+char *get_funccode_name(FuncCode code) {
+  const struct {
+    char *name;
+    FuncCode code;
+  } lookup[29] = {
+      name_of(Halt), name_of(NoOp), name_of(Not),  name_of(Dupe), name_of(And),
+      name_of(Or),   name_of(Xor),  name_of(Jump), name_of(JIfE), name_of(JIfG),
+      name_of(JIfL), name_of(JIGE), name_of(JILE), name_of(JINE), name_of(MvSg),
+      name_of(MvDb), name_of(MvQd), name_of(MvFl), name_of(LdSg), name_of(LdDb),
+      name_of(LdQd), name_of(LdFl), name_of(StSg), name_of(StDb), name_of(StQd),
+      name_of(StFl), name_of(Add),  name_of(Sub),  {"Undef", 0},
+  };
+  int i = 0;
+  for (; i < 28; i++) {
+    if (lookup[i].code == code) {
+      break;
+    }
+  }
+  return lookup[i].name;
+}
 
 typedef struct {
   byte *base, *entry, *code, *data, *vars;
@@ -119,8 +143,10 @@ typedef struct {
   u16 immediate;
 } Instruction;
 
-static inline u8 get_dest(byte *ip) { return (*(u8 *)ip) & 0b11111; }
-static inline u8 get_src(byte *ip) { return (*(u8 *)ip + 1) >> 3; }
+static inline u8 get_dest(byte *ip) { return *ip & 0b11111; }
+static inline u8 get_src(byte *ip) {
+  return (from_be_bytes_16(ip) >> 3) & 0b11111;
+}
 static inline u16 get_immediate(byte *ip, u8 bitcount) {
   return from_be_bytes_16(ip + 2) & ((1 << bitcount) - 1);
 }
@@ -178,7 +204,8 @@ Instruction decode_instruction_type_qo(Context *context) {
   u32 raw = from_be_bytes_32(context->ip);
   eprintf("[LOG] Read instruction as: %08X\n", raw);
   u16 func = raw >> 12;
-  func &= 0b01111111;
+  func &= 0b111111;
+  eprintf("[LOG] Qo func without mask: %i\n", func);
   func |= mask;
   u8 dest = get_dest(context->ip);
   u8 src = get_src(context->ip);
@@ -214,7 +241,8 @@ struct Cancer {
   u8 sz;
 } decode_instruction(Context *context) {
   eprintf("[LOG] Decoding instruction!\n");
-  u8 mark = ((*(u8 *)context->ip) >> 5);
+  u8 mark = (from_be_bytes_32(context->ip) >> 29);
+  eprintf("[LOG] Read mark as: %i\n", mark);
   if (mark & 0b100) {
     eprintf("[LOG] Read instruction as type B!\n");
     return (struct Cancer){decode_instruction_type_b(context), 1};
@@ -224,7 +252,7 @@ struct Cancer {
   } else if (mark == 0b010) {
     eprintf("[LOG] Read instruction as type Qf!\n");
     return (struct Cancer){decode_instruction_type_qf(context), 4};
-  } else if ((*(u16 *)context->ip) & 0b10000000) {
+  } else if (from_be_bytes_32(context->ip) & 0b1000000000000000000) {
     eprintf("[LOG] Read instruction as type Qo!\n");
     return (struct Cancer){decode_instruction_type_qo(context), 4};
   }
@@ -235,6 +263,9 @@ int exec_instruction(Context *context) {
   context->registers[0] = 0;
   struct Cancer cancer = decode_instruction(context);
   Instruction instruction = cancer.inst;
+  eprintf("[LOG] Executing instruction: %04X\n", instruction.functional);
+  eprintf("[LOG] Executing instruction: %s\n",
+          get_funccode_name(instruction.functional));
   context->ip += cancer.sz;
   switch (instruction.functional) {
     case Halt:
@@ -291,38 +322,55 @@ int exec_instruction(Context *context) {
                       instruction.immediate;
       break;
     case MvSg:
-      *((u16 *)instruction.destination + 3) = instruction.immediate;
+      *instruction.destination = instruction.immediate;
       break;
     case MvDb:
-      *((u16 *)instruction.destination + 2) = instruction.immediate;
+      *instruction.destination = (u64)instruction.immediate << 16;
       break;
     case MvQd:
-      *((u16 *)instruction.destination + 1) = instruction.immediate;
+      *instruction.destination = (u64)instruction.immediate << 32;
       break;
     case MvFl:
-      *((u16 *)instruction.destination) = instruction.immediate;
+      *instruction.destination = (u64)instruction.immediate << 48;
       break;
     case LdSg:
-      *((u8 *)instruction.destination + 7) =
-          *((byte *)&context->buffer + *instruction.source +
-            instruction.immediate);
-      break;
-    case LdDb:
-      *((u16 *)instruction.destination + 3) =
-          *((byte *)&context->buffer + *instruction.source +
-            instruction.immediate);
-      break;
-    case LdQd:
-      *((u32 *)instruction.destination + 1) =
-          *((byte *)&context->buffer + *instruction.source +
-            instruction.immediate);
-      break;
-    case LdFl:
       *instruction.destination = *((byte *)&context->buffer +
                                    *instruction.source + instruction.immediate);
       break;
+    case LdDb:
+      *instruction.destination =
+          from_be_bytes_16(((byte *)&context->buffer + *instruction.source +
+                            instruction.immediate));
+      break;
+    case LdQd:
+      *instruction.destination =
+          from_be_bytes_32((byte *)&context->buffer + *instruction.source +
+                           instruction.immediate);
+      break;
+    case LdFl:
+      *instruction.destination =
+          from_be_bytes((byte *)&context->buffer + *instruction.source +
+                        instruction.immediate);
+      break;
+    case StSg:
+      *(u8 *)((byte *)&context->buffer + *instruction.destination +
+              instruction.immediate) = *(u8 *)instruction.source;
+      break;
+    case StDb:
+      *(u16 *)((byte *)&context->buffer + *instruction.destination +
+               instruction.immediate) = *(u16 *)instruction.source;
+      break;
+    case StQd:
+      *(u32 *)((byte *)&context->buffer + *instruction.destination +
+               instruction.immediate) = *(u32 *)instruction.source;
+      break;
+    case StFl:
+      *(u64 *)((byte *)&context->buffer + *instruction.destination +
+               instruction.immediate) = *instruction.source;
+      break;
     case Add:
-      *instruction.destination += *instruction.source + instruction.immediate;
+      *instruction.destination = *instruction.destination +
+                                 *instruction.source + instruction.immediate;
       break;
     case Sub:
       *instruction.destination -= *instruction.source;
