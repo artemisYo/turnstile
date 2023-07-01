@@ -19,66 +19,115 @@ by a padding of 8 Halt instructions.
 Formats:
 | Arguments   | size | 1st byte  | 2nd byte  | 3rd byte  | 4th byte  | Type |
 | ----------- | ---- | --------- | --------- | --------- | --------- | ---- |
-| None/R:     |    8 | 1ffR_RRRR |           |           |           | B    |
+| None:       |    8 | 100f_ffff |           |           |           | Be   |
+| R:          |    8 | 11fR_RRRR |           |           |           | Br   |
 | R, r:       |   16 | 000R_RRRR | rrrr_rfff |           |           | D    |
 | R, i:       |   32 | 001R_RRRR | f0ff_f0ff | iiii_iiii | iiii_iiii | Qi   |
 | R, r, i:    |   32 | 001R_RRRR | rrrr_r1ff | ffff_iiii | iiii_iiii | Qo   |
 | R, r, s, i: |   32 | 010R_RRRR | rrrr_rfff | fffs_ssss | iiii_iiii | Qf   |
+| ----------- | ---- | --------- | --------- | --------- | --------- | ---- |
+| Virtual Extension, these are instructions to interact with the execution  |
+| environment in a vm                                                       |
+| ----------- | ---- | --------- | --------- | --------- | --------- | ---- |
+| Any         |    8 | 101f_ffff |           |           |           | V    |
+| ----------- | ---- | --------- | --------- | --------- | --------- | ---- |
+| The encodings beneath should be used sparingly, as they would be slow to  |
+| decode and they are quite big                                             |
+| ----------- | ---- | --------- | --------- | --------- | --------- | ---- |
+| R, i:       |   80 | 011R_RRRR | f0ff_f0ff |           |           | Dpi  |
+|             |      | iiii_iiii | iiii_iiii | iiii_iiii | iiii_iiii |      |
+|             |      | iiii_iiii | iiii_iiii | iiii_iiii | iiii_iiii |      |
 
 The above are the format patterns for different instruction types.
 In the pattern letters stand for a bit of the corresponding argument.
 The letter `f` signifies a bit of the functional code, this identifies
 the actual operation to be done. The functional code is split in some 
 cases, this is to keep the parity of the rest of the data.
-The prefix of `0b011x_xxxx` is reserved for longer instructions.
 
-| Name | Description            | f/max_f         |
-| ---- | ---------------------- | --------------- |
-| 5 bit register or no argument                   |
-| ---- | ---------------------- | --------------- |
-| Halt | Halts execution        | 0/3             |
-| NoOp | Does nothing           | 1/3             |
-| Not  | R = !R                 | 2/3             |
-| ---- | ---------------------- | --------------- |
-| 5 bit source and destination register args      |
-| ---- | ---------------------- | --------------- |
-| Dupe | R = r                  | 2/7             |
-| And  | R &= r                 | 3/7             |
-| Or   | R |= r                 | 4/7             |
-| Xor  | R ^= r                 | 5/7             |
-| ---- | ---------------------- | --------------- |
-| 5 bit lhs, rhs and src register, 8 bit offset   |
-| ---- | ---------------------- | --------------- |
-| Jump | ip = s + i             | 0/63            |
-| JIfE | ip = R==r ? s + i : ip | 1/63            |
-| JIfG | ip = R> r ? s + i : ip | 2/63            |
-| JIfL | ip = R< r ? s + i : ip | 3/63            |
-| JIGE | ip = R>=r ? s + i : ip | 4/63            |
-| JILE | ip = R<=r ? s + i : ip | 5/63            |
-| JINE | ip = R!=r ? s + i : ip | 6/63            |
-| ---- | ---------------------- | --------------- |
-| 5 bit destination register, 16 bit immediate    |
-| ---- | ---------------------- | --------------- |
-| MvSg | R = i                  | 0/63            |
-| MvDb | R = i << 16            | 1/63            |
-| MvQd | R = i << 32            | 2/63            |
-| MvFl | R = i << 48            | 3/63            |
-| ---- | ---------------------- | --------------- |
-| 5 bit dest and src register, 12 bit offset      |
-| ---- | ---------------------- | --------------- |
-| LdSg | R = (u8) [r + i]       | 0/63            |
-| LdDb | R = (u16)[r + i]       | 1/63            |
-| LdQd | R = (u32)[r + i]       | 2/63            |
-| LdFl | R = (u64)[r + i]       | 3/63            |
-| StSg | [R + i] = (u8) r       | 4/63            |
-| StDb | [R + i] = (u16)r       | 5/63            |
-| StQd | [R + i] = (u32)r       | 6/63            |
-| StFl | [R + i] = (u64)r       | 7/63            |
-| Add  | R = R + r + i          | 8/63            |
-| Sub  | R = R - r - i          | 9/63            |
+| Name | Description                        | f/max_f         | Privileges? |
+| ---- | ---------------------------------- | --------------- | ----------- |
+| No argument                                                               |
+| ---- | ---------------------------------- | --------------- | ----------- |
+| Halt | Halts execution                    | 0/31            | No          |
+| NoOp | Does nothing                       | 1/31            | No          |
+| DIHT | Resets IHT                         | 2/31            | Yes         |
+| SIHT | Pushes IHT onto stack              | 3/31            | Yes         |
+| OIHT | Pops IHT from stack                | 4/31            | Yes         |
+| Retn | Pops ip from stack and returns     | 5/31            | No          |
+| ---- | ---------------------------------- | --------------- | ----------- |
+| 5 bit register or none                                                    |
+| ---- | ---------------------------------- | --------------- | ----------- |
+| Itrt | Interrupt with R as handler id     | 0/1             | No          |
+| ItRt | Return from interrupt              | 1/1             | No          |
+| ---- | ---------------------------------- | --------------- | ----------- | 
+| 5 bit source and destination register args                                | 
+| ---- | ---------------------------------- | --------------- | ----------- | 
+| Dupe | R = r                              | 2/7             | No          | 
+| And  | R &= r                             | 3/7             | No          | 
+| Or   | R |= r                             | 4/7             | No          | 
+| Xor  | R ^= r                             | 5/7             | No          |
+| Not  | R = !r                             | 6/7             | No          |
+| ---- | ---------------------------------- | --------------- | ----------- | 
+| 5 bit lhs, rhs and src register, 8 bit offset                             | 
+| ---- | ---------------------------------- | --------------- | ----------- | 
+| Jump | ip = s + i                         | 0/63            | No          | 
+| JIfE | ip = R==r ? s + i : ip             | 1/63            | No          | 
+| JIfG | ip = R> r ? s + i : ip             | 2/63            | No          | 
+| JIfL | ip = R< r ? s + i : ip             | 3/63            | No          | 
+| JIGE | ip = R>=r ? s + i : ip             | 4/63            | No          | 
+| JILE | ip = R<=r ? s + i : ip             | 5/63            | No          | 
+| JINE | ip = R!=r ? s + i : ip             | 6/63            | No          | 
+| ---- | ---------------------------------- | --------------- | ----------- | 
+| 5 bit destination register, 16 bit immediate                              | 
+| ---- | ---------------------------------- | --------------- | ----------- | 
+| MvSg | R = i                              | 0/63            | No          | 
+| MvDb | R = i << 16                        | 1/63            | No          | 
+| MvQd | R = i << 32                        | 2/63            | No          | 
+| MvFl | R = i << 48                        | 3/63            | No          | 
+| LIHT | IHT = *R, IHTsz = i                | 4/63            | Yes         |
+| Call | sp += 8, [sp - 8] = ip, ip = R + i | 5/63            | No          |
+| ---- | ---------------------------------- | --------------- | ----------- |
+| 5 bit dest and src register, 12 bit offset                                |
+| ---- | ---------------------------------- | --------------- | ----------- |
+| LdSg | R = (u8) [r + i]                   | 0/63            | No          |
+| LdDb | R = (u16)[r + i]                   | 1/63            | No          |
+| LdQd | R = (u32)[r + i]                   | 2/63            | No          |
+| LdFl | R = (u64)[r + i]                   | 3/63            | No          |
+| StSg | [R + i] = (u8) r                   | 4/63            | No          |
+| StDb | [R + i] = (u16)r                   | 5/63            | No          |
+| StQd | [R + i] = (u32)r                   | 6/63            | No          |
+| StFl | [R + i] = (u64)r                   | 7/63            | No          |
+| Add  | R = R + r + i                      | 8/63            | No          |
+| Sub  | R = R - r - i                      | 9/63            | No          |
+| ---- | ---------------------------------- | --------------- | ----------- |
+| Any arguments, vm extension                                               |
+| ---- | ---------------------------------- | --------------- | ----------- |
+| Put  | Print c-string at address in r1    | 0/31            | No          |
+| ---- | ---------------------------------- | --------------- | ----------- |
+| 5 bit dest, 64 bit immediate                                              |
+| ---- | ---------------------------------- | --------------- | ----------- |
+|      |                                    |                 |             |
 
+# Interrupt Handler Table
+The IHT is a table embeded in the binary, which contains a list of offsets
+to interrupt handlers, which get used to call the handler specified by the
+index when `Itrt` is called. 
+Upon start a default table is loaded, however a custom table can be loaded
+using `LIHT`, which takes the address of the table through a register and
+it's size through the immediate argument.
+The table needs to be ended by a null byte.
+The default table can be loaded using `DIHT`.
+Since sometimes it might be useful to temporarily load the default IHT and
+then restore the custom IHT, the instructions `SIHT` and `OIHT` exist.
+`SIHT` may also be used as an alternative to `LIHT`, which supports dynamic
+size arguments.
+All interrupt instruction, except for `Itrt`, require privileges, this is a 
+flag which is set at startup and when `Itrt` is called, it is unset when an
+interrupt handler returns through `ItRt`.
 
 # Layout
+Turnstile's bytecode starts with a number determining it's
+byte-length as a 64-bit number.
 Turnstile's bytecode has to declare an entry point, 
 it is a 64-bit number reffering to an offset from the start,
 to which the executor jumps, but if the integer is 0,

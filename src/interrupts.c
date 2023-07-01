@@ -1,0 +1,3 @@
+#ifndef INTERRUPTS_DEFINED
+#define INTERRUPTS_DEFINED
+#endif

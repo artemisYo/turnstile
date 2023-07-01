@@ -37,6 +37,13 @@ void invert_bytes(void *thang, int byte_count) {
     thing[byte_count - 1 - i] = tmp;
   }
 }
+void write_be_bytes(byte *bytes, int count, byte buffer[count]) {
+  for (int i = 0; i < count; i++) {
+    int idx = i;
+    if (!is_big_endian) idx = count - 1 - i;
+    buffer[idx] = bytes[i];
+  }
+}
 u64 from_be_bytes(byte *bytes) {
   u64 out = *(u64 *)bytes;
   if (!is_big_endian) {
@@ -58,7 +65,7 @@ u16 from_be_bytes_16(byte *bytes) {
   }
   return out;
 }
-void file_into(int buffer_size, byte buffer[buffer_size], char *path) {
+int file_into(int buffer_size, byte buffer[buffer_size], char *path) {
   eprintf("[LOG] Opening file: %s\n", path);
   FILE *bytecode_stream = fopen(path, "r");
   if (bytecode_stream == NULL) {
@@ -83,5 +90,6 @@ void file_into(int buffer_size, byte buffer[buffer_size], char *path) {
        c = fgetc(bytecode_stream), i++) {
     buffer[i] = c;
   }
+  return bytecode_size;
 }
 #endif
