@@ -43,6 +43,7 @@ In the pattern letters stand for a bit of the corresponding argument.
 The letter `f` signifies a bit of the functional code, this identifies
 the actual operation to be done. The functional code is split in some 
 cases, this is to keep the parity of the rest of the data.
+Immediates are usually unsigned, except when they are used as an offsset.
 
 | Name | Description                        | f/max_f         | Privileges? |
 | ---- | ---------------------------------- | --------------- | ----------- |
