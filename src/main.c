@@ -193,7 +193,7 @@ Instruction decode(Context* ctx) {
 
 void print_registers(Context* ctx, u32 i) {
   int r = 0b11111 & i;
-  printf("r%i: %i\n", r, ctx->registers[r]);
+  printf("r%i: %lli\n", r, ctx->registers[r]);
 }
 
 int execute(Context* ctx, Instruction instruction) {
@@ -229,7 +229,7 @@ int execute(Context* ctx, Instruction instruction) {
         *instruction.destination |= 0xFFFFFFFF00000000;
       break;
     case SxQd:
-      if (*instruction.destination & (1L << 47))
+      if (*instruction.destination & (1LL << 47))
         *instruction.destination |= 0xFFFF000000000000;
       break;
     case Dupe:
