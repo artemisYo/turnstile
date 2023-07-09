@@ -143,6 +143,7 @@ typedef enum {
 
 #define VMASK = 0b0110000000000000,
   Put = 0b0110010000000000,
+  PReg = 0b0110010100000000,
 } Opcode;
 
 typedef struct {
@@ -188,6 +189,11 @@ Instruction decode(Context* ctx) {
       .opcode = opcode,
       .source = source,
   };
+}
+
+void print_registers(Context* ctx, u32 i) {
+  int r = 0b11111 & i;
+  printf("r%i: %i\n", r, ctx->registers[r]);
 }
 
 int execute(Context* ctx, Instruction instruction) {
@@ -354,6 +360,9 @@ int execute(Context* ctx, Instruction instruction) {
       break;
     case Put:
       printf("%.*s", instruction.immediate, ctx->memory + ctx->registers[1]);
+      break;
+    case PReg:
+      print_registers(ctx, instruction.immediate);
       break;
   }
   return 1;
