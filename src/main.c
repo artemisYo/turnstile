@@ -9,6 +9,9 @@
 #define log(msg, ...)          \
   fprintf(stderr, "[LOG]   "); \
   fprintf(stderr, msg, ##__VA_ARGS__);
+#define log_ubr(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__);
+#define str(symbol) \
+  { symbol, #symbol }
 
 typedef uint64_t u64;
 typedef uint32_t u32;
@@ -48,10 +51,13 @@ static inline void to_big_endian(int byte_count, void* bytes) {
   }
 }
 
-void as_big_endian(int byte_count, void* destination, void* source) {
+void from_big_endian(int byte_count, void* destination, void* source) {
+  log("Read from little endian bytes <0x");
   for (int i = 0; i < byte_count; i++) {
+    log_ubr("%02X", ((u8*)source)[i]);
     ((u8*)destination)[i] = ((u8*)source)[i];
   }
+  log_ubr(">!\n");
   to_big_endian(byte_count, destination);
 }
 
@@ -146,6 +152,27 @@ typedef enum {
   PReg = 0b0110010100000000,
 } Opcode;
 
+char* opcode_name(Opcode opcode) {
+  const struct {
+    Opcode opcode;
+    char* name;
+  } assoc[] = {str(Halt), str(NoOp), str(LdSg), str(LdDb),       str(LdQd),
+               str(LdOc), str(SxSg), str(SxDb), str(SxQd),       str(Dupe),
+               str(bAnd), str(bOr),  str(bXor), str(bNot),       str(ShL),
+               str(ShRZ), str(ShRO), str(RdSg), str(RdDb),       str(RdQd),
+               str(RdOc), str(StSg), str(StDb), str(StQd),       str(StOc),
+               str(Add),  str(Sub),  str(Mul),  str(Div),        str(Jump),
+               str(JIfE), str(JINE), str(JIfG), str(JIGE),       str(JIfL),
+               str(JILE), str(Put),  str(PReg), {0, "undefined"}};
+  long long unsigned i;
+  for (i = 0; i < (sizeof(assoc) / sizeof(assoc[0]) - 1); i++) {
+    if (opcode == assoc[i].opcode) {
+      break;
+    }
+  }
+  return assoc[i].name;
+}
+
 typedef struct {
   Opcode opcode;
   u64* destination;
@@ -157,8 +184,10 @@ typedef struct {
 
 Instruction decode(Context* ctx) {
   u32 raw = 0;
-  as_big_endian(4, &raw, ctx->memory + ctx->instruction_pointer);
-  Opcode opcode = raw & INSTMASK;
+  from_big_endian(4, &raw, ctx->memory + ctx->instruction_pointer);
+  log("Decoding instruction from <0x%08X>!\n", raw);
+  Opcode opcode = (raw >> 16) & INSTMASK;
+  log("Opcode is <0x%04X>!\n", opcode);
   u64 *destination = &ctx->registers[0b11111 & (raw >> 19)],
       *source = &ctx->registers[0b11111 & (raw >> 12)],
       *additional_source = &ctx->registers[0b11111 & raw],
@@ -193,10 +222,12 @@ Instruction decode(Context* ctx) {
 
 void print_registers(Context* ctx, u32 i) {
   int r = 0b11111 & i;
-  printf("r%i: %i\n", r, ctx->registers[r]);
+  printf("r%i: %lli\n", r, ctx->registers[r]);
 }
 
 int execute(Context* ctx, Instruction instruction) {
+  log("Executing instruction at <%llX>!\n", ctx->instruction_pointer);
+  log("Instruction is <%s>!\n", opcode_name(instruction.opcode));
   ctx->registers[0] = 0;
   ctx->instruction_pointer += 4;
   switch (instruction.opcode) {
@@ -229,7 +260,7 @@ int execute(Context* ctx, Instruction instruction) {
         *instruction.destination |= 0xFFFFFFFF00000000;
       break;
     case SxQd:
-      if (*instruction.destination & (1L << 47))
+      if (*instruction.destination & (1LL << 47))
         *instruction.destination |= 0xFFFF000000000000;
       break;
     case Dupe:
@@ -261,45 +292,45 @@ int execute(Context* ctx, Instruction instruction) {
           0xFFFFFFFFFFFFFFFFu >> (*instruction.source + instruction.immediate));
       break;
     case RdSg:
-      as_big_endian(
+      from_big_endian(
           1, instruction.destination,
           ctx->memory + *instruction.source + (i16)instruction.immediate);
       break;
     case RdDb:
-      as_big_endian(
+      from_big_endian(
           2, instruction.destination,
           ctx->memory + *instruction.source + (i16)instruction.immediate);
       break;
     case RdQd:
-      as_big_endian(
+      from_big_endian(
           4, instruction.destination,
           ctx->memory + *instruction.source + (i16)instruction.immediate);
       break;
     case RdOc:
-      as_big_endian(
+      from_big_endian(
           8, instruction.destination,
           ctx->memory + *instruction.source + (i16)instruction.immediate);
       break;
     case StSg:
-      as_big_endian(
+      from_big_endian(
           1,
           ctx->memory + *instruction.destination + (i16)instruction.immediate,
           instruction.source);
       break;
     case StDb:
-      as_big_endian(
+      from_big_endian(
           2,
           ctx->memory + *instruction.destination + (i16)instruction.immediate,
           instruction.source);
       break;
     case StQd:
-      as_big_endian(
+      from_big_endian(
           4,
           ctx->memory + *instruction.destination + (i16)instruction.immediate,
           instruction.source);
       break;
     case StOc:
-      as_big_endian(
+      from_big_endian(
           8,
           ctx->memory + *instruction.destination + (i16)instruction.immediate,
           instruction.source);
@@ -378,12 +409,21 @@ void start(int argc, char* argv[]) {
                  .memory = malloc(MEMSZ),
                  .memory_size = MEMSZ};
   log("Reading file's contents into memory!\n");
-  int i = 0;
-  for (int c = fgetc(file); i < MEMSZ && c != EOF; c = fgetc(file), i++) {
-    ctx.memory[i] = (u8)c;
-  }
+  int i = fread(ctx.memory, 1, MEMSZ, file);
   log("Read %i bytes!\n", i);
   ctx.static_size = i;
+  log("Memory dump:\n");
+  log_ubr("00000000: ");
+  for (int i = 0; i < MEMSZ; i++) {
+    if (i % 16 == 0 && i > 0) {
+      log_ubr("\n");
+      log_ubr("%08X: ", i);
+    } else if (i % 2 == 0) {
+      log_ubr(" ");
+    }
+    log_ubr("%02X", ctx.memory[i]);
+  }
+  log_ubr("\n");
   for (Instruction instruction = decode(&ctx); execute(&ctx, instruction);
        instruction = decode(&ctx)) {
   }
