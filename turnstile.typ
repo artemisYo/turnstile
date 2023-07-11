@@ -33,12 +33,12 @@ The 3 basic formats are structured as such:
   caption: [Basic Formats],
   table(
     align: (left, center, right, right, right, right),
-    columns: (0.6fr, 0.4fr, 1fr, 1fr, 1fr, 1fr),
+    columns: (0.8fr, 0.4fr, 1fr, 1fr, 1fr, 1fr),
     
     [Args],    [Type], [1st Byte],  [2nd Byte],  [3rd Byte],  [4th Byte],
     [R, i],    [L],    [000o oooo], [RRRR Rff0], [iiii iiii], [iiii iiii],
     [R, r, i], [T],    [001o oooo], [RRRR Rffr], [rrrr iiii], [iiii iiii],
-    [R, r, s], [C],    [010o oooo], [RRRR Rffr], [rrrr 0000], [000s ssss],
+    [R, r, s, a], [C],    [010o oooo], [RRRR Rffr], [rrrr aaaa], [a00s ssss],
   )
 )<basic_formats>
 
@@ -46,7 +46,7 @@ The 3 basic formats are structured as such:
   caption: [Virtual Format],
   table(
     align: (left, center, right, right, right, right),
-    columns: (0.6fr, 0.4fr, 1fr, 1fr, 1fr, 1fr),
+    columns: (0.8fr, 0.4fr, 1fr, 1fr, 1fr, 1fr),
     
     [i], [V], [011o oooo], [iiii iiii], [iiii iiii], [iiii iiii],
   )
@@ -61,6 +61,12 @@ it is used for instructions which should be grouped,
 such as ~Add~ and ~Sub~, 
 this number may be treated the same as additional bit to the opcode.
 
+R~ is usually called the destination register,
+~r~ is the source register,
+~s~ is the additional source register and
+~a~ is the return register.
+~i~ is the immediate.
+
 Certain instruction formats are designed for specific instruction types. 
 Type L was made for (l)oading data,
 i.e. any instruction which firstly pertains to the immediate argument.
@@ -69,7 +75,7 @@ it's purpose is to store instructions that load data from memory,
 but also for instructions that deal with data in registers,
 such as the aforementioned ~Add~ instruction.
 Type C was made for (c)ontrol flow, such as the ~Jump~ instruction,
-it deals with 3 registers, 
+it deals with 4 registers, 
 the reason for which will become apparent 
 when conditional branching instructions are introduced.
 
@@ -147,30 +153,29 @@ and enabled at the correct position.
 #pagebreak()
 
 #section[Architecture Overview]
-Turnstile has 30 general purpose registers and 5 specialized forms:
+Turnstile has 31 general purpose registers and 4 specialized forms:
 - r0, the zero register is always set to 0.
-- r1-r30 are general purpose registers, they may be used for anything.
-- sp/r31 is the stack pointer, 
+- r1-r31 are general purpose registers, they may be used for anything.
+- sp is the stack pointer, 
   it may contain any data, 
   but it is used implicitly by some instructions.
   This register is set to the stack top at the start of execution.
 - ip is the instruction pointer register. It's the current programs position in code.
 - mp is the memory pointer register. It stores an address for memory accesses.
-- fp is the fuction table pointer. It stores the start of the function table.
-#section[Function Table]
-Turnstile supports a function table to ease the process of calling subroutines.
-The function table is a section of memory 
-that is indexed to find the correct address to jump to, 
-when the ~Call~ instruction is used.
-It is loaded by the ~LFT~ instruction.
-It consists of a list of 64 bit numbers, which denote a function's address.
-The list has no element delimiters, they are simply put in series.
+
+#section[Memory]
+#subsection[The Stack]
+The stack is a part of the memory that is used to store
+local variables and return addresses.
+The stack can be located using the stack pointer,
+it grows from the end of the address space to the start.
 
 #pagebreak()
 #section(skip: false)[Instructions Detailed]
 One aspect common to all instructions is the instruction pointer increment, 
 it is done before a given instruction finishes executing 
-and is important for instructions such as #ref_section[Call and Retn],
+and is important for instructions such as 
+#ref_section[Jump, JIfE, JINE, JIfG, JIGE, JIfL, JILE],
 as they directly deal with the instruction pointer.
 
 #subsection[Halt and NoOp]
@@ -178,7 +183,7 @@ as they directly deal with the instruction pointer.
 #align(center,
 table(
   align: (left, center, left, right, right, right, right),
-  columns: (4fr, 4fr, 6fr, 8fr, 8fr, 8fr, 8fr), 
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
   [Halt], [L],    [None], [00000000], [00000000], [00000000], [00000000],
   [NoOp], [L],    [None], [00000000], [00000010], [00000000], [00000000],
@@ -192,7 +197,7 @@ NoOp~ does nothing for a cycle.
 #align(center,
 table(
   align: (left, center, left, right, right, right, right),
-  columns: (4fr, 4fr, 6fr, 8fr, 8fr, 8fr, 8fr), 
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
   [LdSg], [L],    [i],    [00000001], [RRRRR000], [iiiiiiii], [iiiiiiii],
   [LdDb], [L],    [i],    [00000001], [RRRRR010], [iiiiiiii], [iiiiiiii],
@@ -221,55 +226,49 @@ LdOc (Load Octic) loads the immediate into the highest quarter of the register:
 R |= i << 48;"
 )
 
-#instruction_section[Call and Retn]
+#instruction_section[SxSg, SxDb, SxQd]
 #part[Encoding]
 #align(center,
 table(
   align: (left, center, left, right, right, right, right),
-  columns: (4fr, 4fr, 6fr, 8fr, 8fr, 8fr, 8fr), 
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
-  [Call], [L],    [i],    [00000010], [00000000], [iiiiiiii], [iiiiiiii],
-  [Retn], [L],    [None], [00000010], [00000010], [00000000], [00000000],
+  [SxSg], [L],    [R],    [00000010], [RRRRR000], [00000000], [00000000],
+  [SxDb], [L],    [R],    [00000010], [RRRRR010], [00000000], [00000000],
+  [SxQd], [L],    [R],    [00000010], [RRRRR100], [00000000], [00000000],
 ))
 #part[Description]
-Call~ pushes the ip onto the stack using the ~sp~ register, 
-then does a lookup in the function table and jumps to the correct address.
-#code(
-"sp += 8;
-[sp - 8] = ip;
-jmp func[i];"
-)
-Retn~ pops a value from the stack,
-then jumps to it.
-#code(
-"sp -= 8;
-jmp [sp];"
-)
+SxSg~ sign extends the destination register's value based on the 16th bit.
+#code("if (R & (1 << 15)) R |= 0xFFFFFFFFFFFF0000;")
+SxDb~ sign extends the destination register's value based on the 32nd bit.
+#code("if (R & (1 << 31)) R |= 0xFFFFFFFF00000000;")
+SxQd~ sign extends the destination register's value based on the 48th bit.
+#code("if (R & (1 << 47)) R |= 0xFFFF000000000000;")
 
 #instruction_section[Dupe]
 #part[Encoding]
 #align(center,
 table(
   align: (left, center, left, right, right, right, right),
-  columns: (4fr, 4fr, 6fr, 8fr, 8fr, 8fr, 8fr), 
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
-  [Dupe], [T],    [R, r], [00000000], [RRRRR00r], [rrrr0000], [00000000],
+  [Dupe], [T],    [R, r], [00100000], [RRRRR00r], [rrrr0000], [00000000],
 ))
 #part[Description]
 Duplicates the contents of the source register into the destination register.
-#code("R = r;")
+#code("R = r")
 
 #instruction_section[bAnd, bOr, bXor, bNot]
 #part[Encoding]
 #align(center,
 table(
   align: (left, center, left, right, right, right, right),
-  columns: (4fr, 4fr, 6fr, 8fr, 8fr, 8fr, 8fr), 
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
-  [bAnd], [T],    [R, r], [00000001], [RRRRR00r], [rrrr0000], [00000000],
-  [bOr],  [T],    [R, r], [00000001], [RRRRR01r], [rrrr0000], [00000000],
-  [bXor], [T],    [R, r], [00000001], [RRRRR10r], [rrrr0000], [00000000],
-  [bNot], [T],    [R, r], [00000001], [RRRRR11r], [rrrr0000], [00000000],
+  [bAnd], [T],    [R, r], [00100001], [RRRRR00r], [rrrr0000], [00000000],
+  [bOr],  [T],    [R, r], [00100001], [RRRRR01r], [rrrr0000], [00000000],
+  [bXor], [T],    [R, r], [00100001], [RRRRR10r], [rrrr0000], [00000000],
+  [bNot], [T],    [R, r], [00100001], [RRRRR11r], [rrrr0000], [00000000],
 ))
 #part[Description]
 bAnd~ sets the destination register to the bitwise AND of the destination and source register values.
@@ -286,23 +285,26 @@ bNot~ sets the destination register to the bitwise NOT of the source register va
 #align(center,
 table(
   align: (left, center, left, right, right, right, right),
-  columns: (4fr, 4fr, 6fr, 8fr, 8fr, 8fr, 8fr), 
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
-  [ShL],  [T],    [R, r, i], [00000010], [RRRRR00r], [rrrriiii], [iiiiiiii],
-  [ShRZ], [T],    [R, r, i], [00000010], [RRRRR01r], [rrrriiii], [iiiiiiii],
-  [ShRO], [T],    [R, r, i], [00000010], [RRRRR11r], [rrrriiii], [iiiiiiii],
+  [ShL],  [T],    [R, r, i], [00100010], [RRRRR00r], [rrrriiii], [iiiiiiii],
+  [ShRZ], [T],    [R, r, i], [00100010], [RRRRR01r], [rrrriiii], [iiiiiiii],
+  [ShRO], [T],    [R, r, i], [00100010], [RRRRR11r], [rrrriiii], [iiiiiiii],
 ))
 #part[Description]
 ShL~ sets the destination to the destination value shifted left 
 by the sum of the source register and immediate value.
+The immediate is treated as signed.
 #code("R = R << (r + i)")
 ShRZ~ sets the destination to the destination value shifted right
 by the sum of the source register and immediate value. 
 The new incoming bits being zero.
+The immediate is treated as signed.
 #code("R = R >> (r + i)")
 ShRO~ sets the destination to the destination value shifted right
 by the sum of the source register and immediate value. 
 The new incoming bits being one.
+The immediate is treated as signed.
 #code("R = R >> (r + i)")
 
 #instruction_section[RdSg, RdDb, RdQd, RdOc]
@@ -310,29 +312,33 @@ The new incoming bits being one.
 #align(center,
 table(
   align: (left, center, left, right, right, right, right),
-  columns: (4fr, 4fr, 6fr, 8fr, 8fr, 8fr, 8fr), 
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
-  [RdSg], [T],    [R, r, i], [00000011], [RRRRR00r], [rrrriiii], [iiiiiiii],
-  [RdDb], [T],    [R, r, i], [00000011], [RRRRR01r], [rrrriiii], [iiiiiiii],
-  [RdQd], [T],    [R, r, i], [00000011], [RRRRR10r], [rrrriiii], [iiiiiiii],
-  [RdOc], [T],    [R, r, i], [00000011], [RRRRR11r], [rrrriiii], [iiiiiiii],
+  [RdSg], [T],    [R, r, i], [00100011], [RRRRR00r], [rrrriiii], [iiiiiiii],
+  [RdDb], [T],    [R, r, i], [00100011], [RRRRR01r], [rrrriiii], [iiiiiiii],
+  [RdQd], [T],    [R, r, i], [00100011], [RRRRR10r], [rrrriiii], [iiiiiiii],
+  [RdOc], [T],    [R, r, i], [00100011], [RRRRR11r], [rrrriiii], [iiiiiiii],
 ))
 #part[Description]
 RdSg~ reads one byte from memory at the address contained in the source register 
 with the immediate as an offset
 and puts it into the destination register.
+The immediate is treated as signed.
 #code("R = (8) [r + i]")
 RdDb~ reads two bytes from memory at the address contained in the source register 
 with the immediate as an offset
 and puts them into the destination register.
+The immediate is treated as signed.
 #code("R = (16)[r + i]")
 RdQd~ reads four bytes from memory at the address contained in the source register 
 with the immediate as an offset
 and puts them into the destination register.
+The immediate is treated as signed.
 #code("R = (32)[r + i]")
 RdOc~ reads eight bytes from memory at the address contained in the source register 
 with the immediate as an offset
 and puts them into the destination register.
+The immediate is treated as signed.
 #code("R = (64)[r + i]")
 
 #instruction_section[StSg, StDb, StQd, StOc]
@@ -340,29 +346,33 @@ and puts them into the destination register.
 #align(center,
 table(
   align: (left, center, left, right, right, right, right),
-  columns: (4fr, 4fr, 6fr, 8fr, 8fr, 8fr, 8fr), 
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
-  [StSg], [T],    [R, r, i], [00000100], [RRRRR00r], [rrrriiii], [iiiiiiii],
-  [StDb], [T],    [R, r, i], [00000100], [RRRRR01r], [rrrriiii], [iiiiiiii],
-  [StQd], [T],    [R, r, i], [00000100], [RRRRR10r], [rrrriiii], [iiiiiiii],
-  [StOc], [T],    [R, r, i], [00000100], [RRRRR11r], [rrrriiii], [iiiiiiii],
+  [StSg], [T],    [R, r, i], [00100100], [RRRRR00r], [rrrriiii], [iiiiiiii],
+  [StDb], [T],    [R, r, i], [00100100], [RRRRR01r], [rrrriiii], [iiiiiiii],
+  [StQd], [T],    [R, r, i], [00100100], [RRRRR10r], [rrrriiii], [iiiiiiii],
+  [StOc], [T],    [R, r, i], [00100100], [RRRRR11r], [rrrriiii], [iiiiiiii],
 ))
 #part[Description]
 StSg~ writes one byte from the source register 
 into memory at the address contained in the destination register 
 with the immediate as an offset.
+The immediate is treated as signed.
 #code("(8) [R + i] = r")
 StDb~ writes two bytes from the source register 
 into memory at the address contained in the destination register 
 with the immediate as an offset.
+The immediate is treated as signed.
 #code("(16)[R + i] = r")
 StQd~ writes four bytes from the source register 
 into memory at the address contained in the destination register 
 with the immediate as an offset.
+The immediate is treated as signed.
 #code("(32)[R + i] = r")
 StOc~ writes eight bytes from the source register 
 into memory at the address contained in the destination register 
 with the immediate as an offset.
+The immediate is treated as signed.
 #code("(64)[R + i] = r")
 
 #instruction_section[Add, Sub, Mul, Div]
@@ -370,12 +380,12 @@ with the immediate as an offset.
 #align(center,
 table(
   align: (left, center, left, right, right, right, right),
-  columns: (4fr, 4fr, 6fr, 8fr, 8fr, 8fr, 8fr), 
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
-  [Add],  [T],    [R, r, i], [00000101], [RRRRR00r], [rrrriiii], [iiiiiiii],
-  [Sub],  [T],    [R, r, i], [00000101], [RRRRR01r], [rrrriiii], [iiiiiiii],
-  [Mul],  [T],    [R, r, i], [00000101], [RRRRR10r], [rrrriiii], [iiiiiiii],
-  [Div],  [T],    [R, r, i], [00000101], [RRRRR11r], [rrrriiii], [iiiiiiii],
+  [Add],  [T],    [R, r, i], [00100101], [RRRRR00r], [rrrriiii], [iiiiiiii],
+  [Sub],  [T],    [R, r, i], [00100101], [RRRRR01r], [rrrriiii], [iiiiiiii],
+  [Mul],  [T],    [R, r, i], [00100101], [RRRRR10r], [rrrriiii], [iiiiiiii],
+  [Div],  [T],    [R, r, i], [00100101], [RRRRR11r], [rrrriiii], [iiiiiiii],
 ))
 #part[Description]
 Add~ puts the sum of the destination and source registers as well as the immediate 
@@ -386,9 +396,11 @@ into the destination register.
 #code("R = R - r - i")
 Mul~ puts the product of the destination register and the sum of the source register and the immediate 
 into the destination register.
+The immediate is treated as signed.
 #code("R = R * (r + i)")
 Mul~ puts the quotient of the destination register and the sum of the source register and the immediate 
 into the destination register.
+The immediate is treated as signed.
 #code("R = R / (r + i)")
 
 #instruction_section[Jump, JIfE, JINE, JIfG, JIGE, JIfL, JILE]
@@ -396,44 +408,69 @@ into the destination register.
 #align(center,
 table(
   align: (left, center, left, right, right, right, right),
-  columns: (4fr, 4fr, 6fr, 8fr, 8fr, 8fr, 8fr), 
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
-  [Jump], [C],    [R, r, s], [00000000], [00000000], [00000000], [000sssss],
-  [JIfE], [C],    [R, r, s], [00000001], [RRRRR00r], [rrrr0000], [000sssss],
-  [JINE], [C],    [R, r, s], [00000001], [RRRRR01r], [rrrr0000], [000sssss],
-  [JIfG], [C],    [R, r, s], [00000010], [RRRRR00r], [rrrr0000], [000sssss],
-  [JIGE], [C],    [R, r, s], [00000010], [RRRRR01r], [rrrr0000], [000sssss],
-  [JIfL], [C],    [R, r, s], [00000011], [RRRRR00r], [rrrr0000], [000sssss],
-  [JILE], [C],    [R, r, s], [00000011], [RRRRR01r], [rrrr0000], [000sssss],
+  [Jump], [C],    [R, r, s, a], [01000000], [00000000], [00000000], [000sssss],
+  [JIfE], [C],    [R, r, s, a], [01000001], [RRRRR00r], [rrrraaaa], [a00sssss],
+  [JINE], [C],    [R, r, s, a], [01000001], [RRRRR01r], [rrrraaaa], [a00sssss], 
+  [JIfG], [C],    [R, r, s, a], [01000010], [RRRRR00r], [rrrraaaa], [a00sssss], 
+  [JIGE], [C],    [R, r, s, a], [01000010], [RRRRR01r], [rrrraaaa], [a00sssss], 
+  [JIfL], [C],    [R, r, s, a], [01000011], [RRRRR00r], [rrrraaaa], [a00sssss], 
+  [JILE], [C],    [R, r, s, a], [01000011], [RRRRR01r], [rrrraaaa], [a00sssss],
 ))
 #part[Description]
-Jump~ jumps to the address in the additional source register.
-#code("ip = s")
+Jump~ jumps to the address in the additional source register
+and place the return address in the return register.
+#code("a = ip; ip = s;")
 JIfE~ jumps to the address in the additional source register 
-if the destination register is equal to the source register.
-#code("if (R == r) ip = s;")
+if the destination register is equal to the source register
+and place the return address in the return register.
+#code("if (R == r) {
+  a = ip;
+  ip = s;
+}")
 JINE~ jumps to the address in the additional source register 
-if the destination register is not equal to the source register.
-#code("if (R != r) ip = s;")
+if the destination register is not equal to the source register
+and place the return address in the return register.
+#code("if (R != r) {
+  a = ip;
+  ip = s;
+}")
 JIfG~ jumps to the address in the additional source register 
-if the destination register is greater than the source register.
-#code("if (R > r) ip = s;")
+if the destination register is greater than the source register
+and place the return address in the return register.
+#code("if (R > r) {
+  a = ip;
+  ip = s;
+}")
 JIGE~ jumps to the address in the additional source register 
-if the destination register is greater than or equal to the source register.
-#code("if (R >= r) ip = s;")
+if the destination register is greater than or equal to the source register
+and place the return address in the return register.
+#code("if (R >= r) {
+  a = ip;
+  ip = s;
+}")
 JIfL~ jumps to the address in the additional source register 
-if the destination register is less than the source register.
-#code("if (R < r) ip = s;")
+if the destination register is less than the source register
+and place the return address in the return register.
+#code("if (R < r) {
+  a = ip;
+  ip = s;
+}")
 JILE~ jumps to the address in the additional source register 
-if the destination register is less than or equal to the source register.
-#code("if (R <= r) ip = s;")
+if the destination register is less than or equal to the source register
+and place the return address in the return register.
+#code("if (R <= r) {
+  a = ip;
+  ip = s;
+}")
 
 #instruction_section[Put]
 #part[Encoding]
 #align(center,
 table(
   align: (left, center, left, right, right, right, right),
-  columns: (4fr, 4fr, 6fr, 8fr, 8fr, 8fr, 8fr), 
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
   [Jump], [V],    [i],    [00000100], [iiiiiiii], [iiiiiiii], [iiiiiiii],
 ))
@@ -441,17 +478,27 @@ table(
 Put~ prints the c-style string at address in ~r1~ until it either ends 
 or the printed length is equal to the immediate.
 #code("printf(\"%.*s\", i, r1)")
+
+#instruction_section[PReg]
+#part[Encoding]
+#align(center,
+table(
+  align: (left, center, left, right, right, right, right),
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
+  [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
+  [PReg], [V],    [i],    [00000101], [00000000], [00000000], [000iiiii],
+))
+#part[Description]
+PReg~ prints the register denoted by the lowest 5 bits of the instruction.
+#code("printf(\"r%i: %i\\n\", i & 0b11111, regs[i & 0b11111]);")
 #pagebreak()
+#section[Turnstile's ABI]
 
 #section[Further Work]
 This section enumerates yet to be specified details.
-- Function table
-- Instructions in microcode
 - Turnstile ABI
 - SIMD-extension (wide instruction encodings?)
 - Floating Point extensions
-#title[SIMD Extension]
-TODO
 #section(level: 1)[Index of Tables]
 #outline(
   title: none,
