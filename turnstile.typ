@@ -472,7 +472,7 @@ table(
   align: (left, center, left, right, right, right, right),
   columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
-  [Jump], [V],    [i],    [00000100], [iiiiiiii], [iiiiiiii], [iiiiiiii],
+  [Put ], [V],    [i],    [01100100], [iiiiiiii], [iiiiiiii], [iiiiiiii],
 ))
 #part[Description]
 Put~ prints the c-style string at address in ~r1~ until it either ends 
@@ -486,13 +486,25 @@ table(
   align: (left, center, left, right, right, right, right),
   columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
   [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
-  [PReg], [V],    [i],    [00000101], [00000000], [00000000], [000iiiii],
+  [PReg], [V],    [i],    [01100101], [00000000], [00000000], [000iiiii],
 ))
 #part[Description]
 PReg~ prints the register denoted by the lowest 5 bits of the instruction.
 #code("printf(\"r%i: %i\\n\", i & 0b11111, regs[i & 0b11111]);")
 #pagebreak()
 #section[Turnstile's ABI]
+Before calling a function the caller is responsible for saving their
+register states.
+Upon entry of a subroutine the callee needs to save the return address, 
+which the caller has to put into the first register.
+Arguments are passed by registers, 
+they are assigned starting from the second register, going up.
+Arguments bigger than the register have to be passed by pointer, 
+this includes structs, tuples and any construct, 
+so long as the size is bigger than the register.
+Functions returning types bigger than a register have to allocate
+the space on the stack before pushing the return address,
+this space will not be deallocated by the function returning.
 
 #section[Further Work]
 This section enumerates yet to be specified details.
