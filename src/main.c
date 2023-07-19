@@ -2,14 +2,17 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
+static int IS_QUIET = 0;
 #define error(msg, ...) \
   printf("[ERROR] ");   \
   printf(msg, ##__VA_ARGS__);
 #define log(msg, ...)          \
+  if (!IS_QUIET) { 	       \
   fprintf(stderr, "[LOG]   "); \
-  fprintf(stderr, msg, ##__VA_ARGS__);
-#define log_ubr(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__);
+  fprintf(stderr, msg, ##__VA_ARGS__);}
+#define log_ubr(msg, ...) if (!IS_QUIET) {fprintf(stderr, msg, ##__VA_ARGS__);}
 #define str(symbol) \
   { symbol, #symbol }
 
@@ -429,7 +432,12 @@ void start(int argc, char* argv[]) {
   }
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char** argv) {
+  if (strncmp(argv[1], "-q", 2) == 0) {
+    IS_QUIET = 1;
+    argc--;
+    argv++;
+  }
   determine_endianess();
   test_swap();
   start(argc, argv);
