@@ -433,7 +433,7 @@ void start(int argc, char* argv[]) {
 }
 
 int main(int argc, char** argv) {
-  if (strncmp(argv[1], "-q", 2) == 0) {
+  if (argc > 1 && strncmp(argv[1], "-q", 2) == 0) {
     IS_QUIET = 1;
     argc--;
     argv++;
