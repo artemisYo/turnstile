@@ -4,16 +4,24 @@
 #include <stdlib.h>
 #include <string.h>
 
+// TODO:
+// 1. WrFl
+// 2. Make bofa them resolve the file size if the provided size is 0
+
 static int IS_QUIET = 0;
-#define error(msg, ...) \
-  printf("[ERROR] ");   \
+#define error(msg, ...)                                                        \
+  printf("[ERROR] ");                                                          \
   printf(msg, ##__VA_ARGS__);
-#define log(msg, ...)          \
-  if (!IS_QUIET) { 	       \
-  fprintf(stderr, "[LOG]   "); \
-  fprintf(stderr, msg, ##__VA_ARGS__);}
-#define log_ubr(msg, ...) if (!IS_QUIET) {fprintf(stderr, msg, ##__VA_ARGS__);}
-#define str(symbol) \
+#define log(msg, ...)                                                          \
+  if (!IS_QUIET) {                                                             \
+    fprintf(stderr, "[LOG]   ");                                               \
+    fprintf(stderr, msg, ##__VA_ARGS__);                                       \
+  }
+#define log_ubr(msg, ...)                                                      \
+  if (!IS_QUIET) {                                                             \
+    fprintf(stderr, msg, ##__VA_ARGS__);                                       \
+  }
+#define str(symbol)                                                            \
   { symbol, #symbol }
 
 typedef uint64_t u64;
@@ -25,7 +33,7 @@ typedef uint8_t u8;
 static enum { undetermined, little, big } ENDIANESS = undetermined;
 void determine_endianess() {
   char stuff[] = {0x11, 0x22, 0x33, 0x44};
-  u32 interpreted = *((u32*)&stuff);
+  u32 interpreted = *((u32 *)&stuff);
   if (interpreted == 0x11223344) {
     ENDIANESS = big;
     log("Endianess is big!\n");
@@ -38,8 +46,8 @@ void determine_endianess() {
   }
 }
 
-void swap_bytes(int byte_count, void* bytes) {
-  u8* thing = bytes;
+void swap_bytes(int byte_count, void *bytes) {
+  u8 *thing = bytes;
   u8 tmp = 0;
   for (int i = 0; i < byte_count / 2; i++) {
     tmp = thing[i];
@@ -48,17 +56,17 @@ void swap_bytes(int byte_count, void* bytes) {
   }
 }
 
-static inline void to_big_endian(int byte_count, void* bytes) {
+static inline void to_big_endian(int byte_count, void *bytes) {
   if (ENDIANESS == little) {
     swap_bytes(byte_count, bytes);
   }
 }
 
-void from_big_endian(int byte_count, void* destination, void* source) {
+void from_big_endian(int byte_count, void *destination, void *source) {
   log("Read from little endian bytes <0x");
   for (int i = 0; i < byte_count; i++) {
-    log_ubr("%02X", ((u8*)source)[i]);
-    ((u8*)destination)[i] = ((u8*)source)[i];
+    log_ubr("%02X", ((u8 *)source)[i]);
+    ((u8 *)destination)[i] = ((u8 *)source)[i];
   }
   log_ubr(">!\n");
   to_big_endian(byte_count, destination);
@@ -77,20 +85,20 @@ void test_swap() {
   }
 }
 
-FILE* get_file(int argc, char* argv[]) {
+FILE *get_file(int argc, char *argv[]) {
   if (argc != 2) {
     printf("Correct usage:\n\tturnstile <filename.stile>\n");
     exit(0);
   }
-  FILE* out = fopen(argv[1], "r");
+  FILE *out = fopen(argv[1], "r");
   if (out == NULL) {
     switch (errno) {
-      case 2:
-        error("File <%s> does not exist!\n", argv[1]);
-        exit(0);
-      default:
-        error("Encountered error while opening file!\n");
-        exit(0);
+    case 2:
+      error("File <%s> does not exist!\n", argv[1]);
+      exit(0);
+    default:
+      error("Encountered error while opening file!\n");
+      exit(0);
     }
   }
   log("File <%s> opened!\n", argv[1]);
@@ -101,7 +109,8 @@ typedef struct {
   u64 registers[32];
   u64 stack_pointer;
   u64 instruction_pointer;
-  u8* memory;
+  u64 *iht_pointer;
+  u8 *memory;
   u64 static_size;
   u64 memory_size;
 } Context;
@@ -118,6 +127,8 @@ typedef enum {
   SxSg = 0b0000001000000000,
   SxDb = 0b0000001000000010,
   SxQd = 0b0000001000000100,
+  Intr = 0b0000001100000000,
+  LIHT = 0b0000010000000000,
 
 #define TMASK = 0b0010000000000000,
   Dupe = 0b0010000000000000,
@@ -153,20 +164,21 @@ typedef enum {
 #define VMASK = 0b0110000000000000,
   Put = 0b0110010000000000,
   PReg = 0b0110010100000000,
+  LdFl = 0b0110011000000000,
 } Opcode;
 
-char* opcode_name(Opcode opcode) {
+char *opcode_name(Opcode opcode) {
   const struct {
     Opcode opcode;
-    char* name;
-  } assoc[] = {str(Halt), str(NoOp), str(LdSg), str(LdDb),       str(LdQd),
-               str(LdOc), str(SxSg), str(SxDb), str(SxQd),       str(Dupe),
-               str(bAnd), str(bOr),  str(bXor), str(bNot),       str(ShL),
-               str(ShRZ), str(ShRO), str(RdSg), str(RdDb),       str(RdQd),
-               str(RdOc), str(StSg), str(StDb), str(StQd),       str(StOc),
-               str(Add),  str(Sub),  str(Mul),  str(Div),        str(Jump),
-               str(JIfE), str(JINE), str(JIfG), str(JIGE),       str(JIfL),
-               str(JILE), str(Put),  str(PReg), {0, "undefined"}};
+    char *name;
+  } assoc[] = {
+      str(Halt), str(NoOp), str(LdSg), str(LdDb), str(LdQd), str(LdOc),
+      str(SxSg), str(SxDb), str(SxQd), str(Dupe), str(bAnd), str(bOr),
+      str(bXor), str(bNot), str(ShL),  str(ShRZ), str(ShRO), str(RdSg),
+      str(RdDb), str(RdQd), str(RdOc), str(StSg), str(StDb), str(StQd),
+      str(StOc), str(Add),  str(Sub),  str(Mul),  str(Div),  str(Jump),
+      str(JIfE), str(JINE), str(JIfG), str(JIGE), str(JIfL), str(JILE),
+      str(Put),  str(PReg), str(Intr), str(LIHT), str(LdFl), {0, "undefined"}};
   long long unsigned i;
   for (i = 0; i < (sizeof(assoc) / sizeof(assoc[0]) - 1); i++) {
     if (opcode == assoc[i].opcode) {
@@ -178,14 +190,14 @@ char* opcode_name(Opcode opcode) {
 
 typedef struct {
   Opcode opcode;
-  u64* destination;
-  u64* source;
-  u64* additional_source;
-  u64* return_register;
+  u64 *destination;
+  u64 *source;
+  u64 *additional_source;
+  u64 *return_register;
   u32 immediate;
 } Instruction;
 
-Instruction decode(Context* ctx) {
+Instruction decode(Context *ctx) {
   u32 raw = 0;
   from_big_endian(4, &raw, ctx->memory + ctx->instruction_pointer);
   log("Decoding instruction from <0x%08X>!\n", raw);
@@ -197,21 +209,21 @@ Instruction decode(Context* ctx) {
       *return_register = &ctx->registers[0b11111 & (raw >> 7)];
   u32 immediate;
   switch (raw >> 29) {
-    case 0b000:
-      immediate = 0xFFFF & raw;
-      break;
-    case 0b001:
-      immediate = 0xFFF & raw;
-      break;
-    case 0b010:
-      immediate = 0;
-      break;
-    case 0b011:
-      immediate = 0xFFFFFF & raw;
-      break;
-    default:
-      error("Unsupported instruction format <%i>!\n", raw >> 29);
-      exit(0);
+  case 0b000:
+    immediate = 0xFFFF & raw;
+    break;
+  case 0b001:
+    immediate = 0xFFF & raw;
+    break;
+  case 0b010:
+    immediate = 0;
+    break;
+  case 0b011:
+    immediate = 0xFFFFFF & raw;
+    break;
+  default:
+    error("Unsupported instruction format <%i>!\n", raw >> 29);
+    exit(0);
   };
   return (Instruction){
       .additional_source = additional_source,
@@ -223,191 +235,225 @@ Instruction decode(Context* ctx) {
   };
 }
 
-void print_registers(Context* ctx, u32 i) {
+void print_registers(Context *ctx, u32 i) {
   int r = 0b11111 & i;
   printf("r%i: %lli\n", r, ctx->registers[r]);
 }
 
-int execute(Context* ctx, Instruction instruction) {
+void call_interrupt(Context *ctx, u64 *reg) {
+  if (ctx->iht_pointer == 0) {
+    error("Tried calling an interrupt with invalid IHT!\n")
+  } else {
+    u64 address = 0;
+    from_big_endian(4, &address, ctx->iht_pointer + *reg);
+    ctx->stack_pointer -= 8;
+    from_big_endian(8, ctx->memory + ctx->stack_pointer,
+                    &ctx->instruction_pointer);
+    ctx->instruction_pointer = address;
+  }
+}
+
+void load_file(Context* ctx, u64 i) {
+  u8 destination_register = (i >> 16) & 0b00011111;
+  u8 count_register = (i >> 8) & 0b00011111;
+  u8 path_register = i & 0b00011111;
+  char* path = (char*) ctx->memory + ctx->registers[path_register];
+  FILE* f = fopen(path, "r");
+  if (f == NULL) {
+    error("Could not LdFl on <%s>!\n", path);	
+    error("Errno code is <%i>!\n", errno);
+    exit(0);
+  }
+  fread(ctx->memory + ctx->registers[destination_register], 1, ctx->registers[count_register], f);
+  fclose(f);
+}
+
+int execute(Context *ctx, Instruction instruction) {
   log("Executing instruction at <%llX>!\n", ctx->instruction_pointer);
   log("Instruction is <%s>!\n", opcode_name(instruction.opcode));
   ctx->registers[0] = 0;
   ctx->instruction_pointer += 4;
   switch (instruction.opcode) {
-    case Halt:
-      return 0;
-    case NoOp:
-      break;
-    case LdSg:
-      *instruction.destination &= 0xFFFFFFFFFFFF0000;
-      *instruction.destination |= (u16)instruction.immediate;
-      break;
-    case LdDb:
-      *instruction.destination &= 0xFFFFFFFF0000FFFF;
-      *instruction.destination |= (u32)(u16)instruction.immediate << 16;
-      break;
-    case LdQd:
-      *instruction.destination &= 0xFFFF0000FFFFFFFF;
-      *instruction.destination |= (u64)(u16)instruction.immediate << 32;
-      break;
-    case LdOc:
-      *instruction.destination &= 0x0000FFFFFFFFFFFF;
-      *instruction.destination |= (u64)(u16)instruction.immediate << 48;
-      break;
-    case SxSg:
-      if (*instruction.destination & (1 << 15))
-        *instruction.destination |= 0xFFFFFFFFFFFF0000;
-      break;
-    case SxDb:
-      if (*instruction.destination & (1 << 31))
-        *instruction.destination |= 0xFFFFFFFF00000000;
-      break;
-    case SxQd:
-      if (*instruction.destination & (1LL << 47))
-        *instruction.destination |= 0xFFFF000000000000;
-      break;
-    case Dupe:
-      *instruction.destination = *instruction.source;
-      break;
-    case bAnd:
-      *instruction.destination &= *instruction.source;
-      break;
-    case bOr:
-      *instruction.destination |= *instruction.source;
-      break;
-    case bXor:
-      *instruction.destination ^= *instruction.source;
-      break;
-    case bNot:
-      *instruction.destination = ~*instruction.source;
-      break;
-    case ShL:
-      *instruction.destination <<= *instruction.source + instruction.immediate;
-      break;
-    case ShRZ:
-      *instruction.destination >>= *instruction.source + instruction.immediate;
-      *instruction.destination &=
-          0xFFFFFFFFFFFFFFFFu >> (*instruction.source + instruction.immediate);
-      break;
-    case ShRO:
-      *instruction.destination >>= *instruction.source + instruction.immediate;
-      *instruction.destination |= ~(
-          0xFFFFFFFFFFFFFFFFu >> (*instruction.source + instruction.immediate));
-      break;
-    case RdSg:
-      from_big_endian(
-          1, instruction.destination,
-          ctx->memory + *instruction.source + (i16)instruction.immediate);
-      break;
-    case RdDb:
-      from_big_endian(
-          2, instruction.destination,
-          ctx->memory + *instruction.source + (i16)instruction.immediate);
-      break;
-    case RdQd:
-      from_big_endian(
-          4, instruction.destination,
-          ctx->memory + *instruction.source + (i16)instruction.immediate);
-      break;
-    case RdOc:
-      from_big_endian(
-          8, instruction.destination,
-          ctx->memory + *instruction.source + (i16)instruction.immediate);
-      break;
-    case StSg:
-      from_big_endian(
-          1,
-          ctx->memory + *instruction.destination + (i16)instruction.immediate,
-          instruction.source);
-      break;
-    case StDb:
-      from_big_endian(
-          2,
-          ctx->memory + *instruction.destination + (i16)instruction.immediate,
-          instruction.source);
-      break;
-    case StQd:
-      from_big_endian(
-          4,
-          ctx->memory + *instruction.destination + (i16)instruction.immediate,
-          instruction.source);
-      break;
-    case StOc:
-      from_big_endian(
-          8,
-          ctx->memory + *instruction.destination + (i16)instruction.immediate,
-          instruction.source);
-      break;
-    case Add:
-      *instruction.destination += *instruction.source + instruction.immediate;
-      break;
-    case Sub:
-      *instruction.destination -= *instruction.source - instruction.immediate;
-      break;
-    case Mul:
-      *instruction.destination *=
-          *instruction.source + (i16)instruction.immediate;
-      break;
-    case Div:
-      *instruction.destination /=
-          *instruction.source + (i16)instruction.immediate;
-      break;
-    case Jump:
+  case Halt:
+    return 0;
+  case NoOp:
+    break;
+  case LdSg:
+    *instruction.destination &= 0xFFFFFFFFFFFF0000;
+    *instruction.destination |= (u16)instruction.immediate;
+    break;
+  case LdDb:
+    *instruction.destination &= 0xFFFFFFFF0000FFFF;
+    *instruction.destination |= (u32)(u16)instruction.immediate << 16;
+    break;
+  case LdQd:
+    *instruction.destination &= 0xFFFF0000FFFFFFFF;
+    *instruction.destination |= (u64)(u16)instruction.immediate << 32;
+    break;
+  case LdOc:
+    *instruction.destination &= 0x0000FFFFFFFFFFFF;
+    *instruction.destination |= (u64)(u16)instruction.immediate << 48;
+    break;
+  case SxSg:
+    if (*instruction.destination & (1 << 15))
+      *instruction.destination |= 0xFFFFFFFFFFFF0000;
+    break;
+  case SxDb:
+    if (*instruction.destination & (1 << 31))
+      *instruction.destination |= 0xFFFFFFFF00000000;
+    break;
+  case SxQd:
+    if (*instruction.destination & (1LL << 47))
+      *instruction.destination |= 0xFFFF000000000000;
+    break;
+  case Intr:
+    call_interrupt(ctx, instruction.destination);
+    break;
+  case LIHT:
+    ctx->iht_pointer = (u64 *)(ctx->memory + *instruction.destination);
+    break;
+  case Dupe:
+    *instruction.destination = *instruction.source;
+    break;
+  case bAnd:
+    *instruction.destination &= *instruction.source;
+    break;
+  case bOr:
+    *instruction.destination |= *instruction.source;
+    break;
+  case bXor:
+    *instruction.destination ^= *instruction.source;
+    break;
+  case bNot:
+    *instruction.destination = ~*instruction.source;
+    break;
+  case ShL:
+    *instruction.destination <<= *instruction.source + instruction.immediate;
+    break;
+  case ShRZ:
+    *instruction.destination >>= *instruction.source + instruction.immediate;
+    *instruction.destination &=
+        0xFFFFFFFFFFFFFFFFu >> (*instruction.source + instruction.immediate);
+    break;
+  case ShRO:
+    *instruction.destination >>= *instruction.source + instruction.immediate;
+    *instruction.destination |=
+        ~(0xFFFFFFFFFFFFFFFFu >> (*instruction.source + instruction.immediate));
+    break;
+  case RdSg:
+    from_big_endian(1, instruction.destination,
+                    ctx->memory + *instruction.source +
+                        (i16)instruction.immediate);
+    break;
+  case RdDb:
+    from_big_endian(2, instruction.destination,
+                    ctx->memory + *instruction.source +
+                        (i16)instruction.immediate);
+    break;
+  case RdQd:
+    from_big_endian(4, instruction.destination,
+                    ctx->memory + *instruction.source +
+                        (i16)instruction.immediate);
+    break;
+  case RdOc:
+    from_big_endian(8, instruction.destination,
+                    ctx->memory + *instruction.source +
+                        (i16)instruction.immediate);
+    break;
+  case StSg:
+    from_big_endian(
+        1, ctx->memory + *instruction.destination + (i16)instruction.immediate,
+        instruction.source);
+    break;
+  case StDb:
+    from_big_endian(
+        2, ctx->memory + *instruction.destination + (i16)instruction.immediate,
+        instruction.source);
+    break;
+  case StQd:
+    from_big_endian(
+        4, ctx->memory + *instruction.destination + (i16)instruction.immediate,
+        instruction.source);
+    break;
+  case StOc:
+    from_big_endian(
+        8, ctx->memory + *instruction.destination + (i16)instruction.immediate,
+        instruction.source);
+    break;
+  case Add:
+    *instruction.destination += *instruction.source + instruction.immediate;
+    break;
+  case Sub:
+    *instruction.destination -= *instruction.source - instruction.immediate;
+    break;
+  case Mul:
+    *instruction.destination *=
+        *instruction.source + (i16)instruction.immediate;
+    break;
+  case Div:
+    *instruction.destination /=
+        *instruction.source + (i16)instruction.immediate;
+    break;
+  case Jump:
+    *instruction.return_register = ctx->instruction_pointer;
+    ctx->instruction_pointer = *instruction.additional_source;
+    break;
+  case JIfE:
+    if (*instruction.destination == *instruction.source) {
       *instruction.return_register = ctx->instruction_pointer;
       ctx->instruction_pointer = *instruction.additional_source;
-      break;
-    case JIfE:
-      if (*instruction.destination == *instruction.source) {
-        *instruction.return_register = ctx->instruction_pointer;
-        ctx->instruction_pointer = *instruction.additional_source;
-      }
-      break;
-    case JINE:
-      if (*instruction.destination != *instruction.source) {
-        *instruction.return_register = ctx->instruction_pointer;
-        ctx->instruction_pointer = *instruction.additional_source;
-      }
-      break;
-    case JIfG:
-      if (*instruction.destination > *instruction.source) {
-        *instruction.return_register = ctx->instruction_pointer;
-        ctx->instruction_pointer = *instruction.additional_source;
-      }
-      break;
-    case JIGE:
-      if (*instruction.destination >= *instruction.source) {
-        *instruction.return_register = ctx->instruction_pointer;
-        ctx->instruction_pointer = *instruction.additional_source;
-      }
-      break;
-    case JIfL:
-      if (*instruction.destination < *instruction.source) {
-        *instruction.return_register = ctx->instruction_pointer;
-        ctx->instruction_pointer = *instruction.additional_source;
-      }
-      break;
-    case JILE:
-      if (*instruction.destination <= *instruction.source) {
-        *instruction.return_register = ctx->instruction_pointer;
-        ctx->instruction_pointer = *instruction.additional_source;
-      }
-      break;
-    case Put:
-      printf("%.*s", instruction.immediate, ctx->memory + ctx->registers[1]);
-      break;
-    case PReg:
-      print_registers(ctx, instruction.immediate);
-      break;
+    }
+    break;
+  case JINE:
+    if (*instruction.destination != *instruction.source) {
+      *instruction.return_register = ctx->instruction_pointer;
+      ctx->instruction_pointer = *instruction.additional_source;
+    }
+    break;
+  case JIfG:
+    if (*instruction.destination > *instruction.source) {
+      *instruction.return_register = ctx->instruction_pointer;
+      ctx->instruction_pointer = *instruction.additional_source;
+    }
+    break;
+  case JIGE:
+    if (*instruction.destination >= *instruction.source) {
+      *instruction.return_register = ctx->instruction_pointer;
+      ctx->instruction_pointer = *instruction.additional_source;
+    }
+    break;
+  case JIfL:
+    if (*instruction.destination < *instruction.source) {
+      *instruction.return_register = ctx->instruction_pointer;
+      ctx->instruction_pointer = *instruction.additional_source;
+    }
+    break;
+  case JILE:
+    if (*instruction.destination <= *instruction.source) {
+      *instruction.return_register = ctx->instruction_pointer;
+      ctx->instruction_pointer = *instruction.additional_source;
+    }
+    break;
+  case Put:
+    printf("%.*s", instruction.immediate, ctx->memory + ctx->registers[1]);
+    break;
+  case PReg:
+    print_registers(ctx, instruction.immediate);
+    break;
+  case LdFl:
+    load_file(ctx, instruction.immediate);
+    break;
   }
   return 1;
 }
 
 #define MEMSZ 4096
-void start(int argc, char* argv[]) {
-  FILE* file = get_file(argc, argv);
+void start(int argc, char *argv[]) {
+  FILE *file = get_file(argc, argv);
   log("Initializing context with %i bytes of memory!\n", MEMSZ);
   Context ctx = {.registers = {0},
                  .stack_pointer = MEMSZ,
+                 .iht_pointer = 0,
                  .instruction_pointer = 0,
                  .memory = malloc(MEMSZ),
                  .memory_size = MEMSZ};
@@ -432,7 +478,7 @@ void start(int argc, char* argv[]) {
   }
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   if (argc > 1 && strncmp(argv[1], "-q", 2) == 0) {
     IS_QUIET = 1;
     argc--;

@@ -35,9 +35,9 @@ The 3 basic formats are structured as such:
     align: (left, center, right, right, right, right),
     columns: (0.8fr, 0.4fr, 1fr, 1fr, 1fr, 1fr),
     
-    [Args],    [Type], [1st Byte],  [2nd Byte],  [3rd Byte],  [4th Byte],
-    [R, i],    [L],    [000o oooo], [RRRR Rff0], [iiii iiii], [iiii iiii],
-    [R, r, i], [T],    [001o oooo], [RRRR Rffr], [rrrr iiii], [iiii iiii],
+    [Args],       [Type], [1st Byte],  [2nd Byte],  [3rd Byte],  [4th Byte],
+    [R, i],       [L],    [000o oooo], [RRRR Rff0], [iiii iiii], [iiii iiii],
+    [R, r, i],    [T],    [001o oooo], [RRRR Rffr], [rrrr iiii], [iiii iiii],
     [R, r, s, a], [C],    [010o oooo], [RRRR Rffr], [rrrr aaaa], [a00s ssss],
   )
 )<basic_formats>
@@ -244,6 +244,42 @@ SxDb~ sign extends the destination register's value based on the 32nd bit.
 #code("if (R & (1 << 31)) R |= 0xFFFFFFFF00000000;")
 SxQd~ sign extends the destination register's value based on the 48th bit.
 #code("if (R & (1 << 47)) R |= 0xFFFF000000000000;")
+
+#instruction_section[Intr]
+#part[Encoding]
+#align(center,
+table(
+  align: (left, center, left, right, right, right, right),
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
+  [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
+  [Intr], [L],    [R],    [00000011], [RRRRR000], [00000000], [00000000],
+))
+#part[Description]
+Intr~ calls an interrupt, the code is fetched from the specified register.
+Then an interrupt handler table is indexed using said code.
+The current instruction pointer is then saved on the stack and a jump to
+the handler address is performed.
+As of now, as the architecture itself isn't planned to produce interrupts, 
+nor receive them from an outside source, calling an interrupt without defining
+the handler table before will cause a no-op. As such it is currently only useful
+for defining syscalls as an OS or an implementor VM.
+
+#instruction_section[LIHT]
+#part[Encoding]
+#align(center,
+table(
+  align: (left, center, left, right, right, right, right),
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
+  [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
+  [LIHT], [L],    [R],    [00000100], [RRRRR000], [00000000], [00000000],
+))
+#part[Description]
+LIHT~ loads an interrupt handler table from the address contained in the
+specified register. The table is 128 entries long, each entry containing
+a 64 bit address to a procedure handling an interrupt.
+Each procedure is responsible for backing up and restoring any state
+that it might want to leave untouched.
+
 
 #instruction_section[Dupe]
 #part[Encoding]
@@ -491,6 +527,41 @@ table(
 #part[Description]
 PReg~ prints the register denoted by the lowest 5 bits of the instruction.
 #code("printf(\"r%i: %i\\n\", i & 0b11111, regs[i & 0b11111]);")
+
+#instruction_section[LdFl]
+#part[Encoding]
+#align(center,
+table(
+  align: (left, center, left, right, right, right, right),
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
+  [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
+  [LdFl], [V],    [i],    [01100110], [000iiiii], [000iiiii], [000iiiii],
+))
+#part[Description]
+Reads a file into memory; the last 5 bits of the 2nd byte denote the register 
+containing the destination's address, the last 5 bits of the 3rd byte denote
+the register containing the maximum amount of bytes to read and the last 5 bits
+of the 4th byte denote the register containing the address of the path.
+The path needs to be null-terminated;
+A length of 0 reads the entire file.
+
+#instruction_section[WrFl]
+#part[Encoding]
+#align(center,
+table(
+  align: (left, center, left, right, right, right, right),
+  columns: (4fr, 4fr, 8fr, 8fr, 8fr, 8fr, 8fr), 
+  [Name], [Type], [Args], [1st Byte], [2nd Byte], [3rd Byte], [4th Byte],
+  [WrFl], [V],    [i],    [01100110], [000iiiii], [000iiiii], [000iiiii],
+))
+#part[Description]
+Writes memory into a file; the last 5 bits of the 2nd byte denote the register 
+containing the file path's address, the last 5 bits of the 3rd byte denote
+the register containing the maximum amount of bytes to write and the last 5 bits
+of the 4th byte denote the register containing the address of the contents to write.
+The path needs to be null-terminated;
+A length of 0 reads the entire file.
+
 #pagebreak()
 #section[Turnstile's ABI]
 Before calling a function the caller is responsible for saving their
